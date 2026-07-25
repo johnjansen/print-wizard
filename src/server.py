@@ -263,7 +263,7 @@ function applyOrientation(){
   let mnX=Infinity,mxX=-Infinity,mnY=Infinity,mxY=-Infinity,mnZ=Infinity;
   for(let i=0;i<pos.length;i+=3){ const x=pos[i],y=pos[i+1],z=pos[i+2];
     if(x<mnX)mnX=x; if(x>mxX)mxX=x; if(y<mnY)mnY=y; if(y>mxY)mxY=y; if(z<mnZ)mnZ=z; }
-  const dx = (BED-(mxX-mnX))/2 - mnX, dy = (BED-(mxY-mnY))/2 - mnY, dz = -mnZ;
+  const dx = -(mnX+mxX)/2, dy = -(mnY+mxY)/2, dz = -mnZ;  // center at origin, minZ=0
   for(let i=0;i<pos.length;i+=3){ pos[i]+=dx; pos[i+1]+=dy; pos[i+2]+=dz; }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
@@ -271,6 +271,7 @@ function applyOrientation(){
   if (mesh) scene.remove(mesh);
   mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color:0xE8D9B5, metalness:0.1, roughness:0.6, flatShading:false}));
   mesh.rotation.x = -Math.PI/2;  // STL Z-up -> three Y-up for display
+  mesh.position.set(BED/2, 0, BED/2);  // sit centered on the bed
   scene.add(mesh);
 }
 
