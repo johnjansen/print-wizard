@@ -335,7 +335,11 @@ async function sliceWithPolyslice(){
     const m=P.merged;
     const Printer=Polyslice.Printer, Filament=Polyslice.Filament;
     const sl=new Polyslice({printer:new Printer('Ender3'),filament:new Filament('GenericPLA'),nozzleTemperature:m.nozzle_temp,bedTemperature:m.bed_temp,fanSpeed:m.fan_max,infillDensity:m.infill,autohome:false,progressCallback:p=>setMsg('sliceMsg','text-filament','slicing… '+Math.round((p||0)*100)+'%')});
-    const sliceMesh=new THREE.Mesh(mesh.geometry,new THREE.MeshBasicMaterial());
+    const sg=mesh.geometry.clone();
+    const bb=new THREE.Box3().setFromBufferAttribute(sg.attributes.position);
+    const cx=(bb.min.x+bb.max.x)/2, cy=(bb.min.y+bb.max.y)/2, cz=(bb.min.z+bb.max.z)/2;
+    sg.translate(-cx,-cy,-cz);
+    const sliceMesh=new THREE.Mesh(sg,new THREE.MeshBasicMaterial());
     let gcode; try{ gcode=sl.slice(sliceMesh); }catch(e){ throw new Error('Polyslice: '+e.message); }
     gcode=P.start_gcode+'\\n'+gcode+'\\n'+P.end_gcode;
     const lm=gcode.match(/; Total Layers: (\d+)/); const fm=gcode.match(/; Filament Length: ([\d.]+)mm/);
