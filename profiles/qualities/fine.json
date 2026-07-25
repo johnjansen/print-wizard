@@ -1,0 +1,7 @@
+{
+  "name": "Fine",
+  "layer_height": 0.12,
+  "speed": 40,
+  "infill": 30,
+  "walls": 3
+}

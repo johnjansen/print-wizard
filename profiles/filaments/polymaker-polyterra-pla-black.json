@@ -1,0 +1,13 @@
+{
+  "name": "Polymaker PolyTerra PLA - Black",
+  "material": "PLA",
+  "filament_diameter": 1.75,
+  "nozzle_temp": 210,
+  "bed_temp": 60,
+  "flow": 0.98,
+  "retraction": {"dist": 0.8, "speed": 40},
+  "cooling": {"fan_max": 100, "layer1_fan": 0},
+  "max_volumetric_speed": 8,
+  "load_temp": 210,
+  "unload_temp": 210
+}

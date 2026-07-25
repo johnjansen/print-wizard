@@ -1,0 +1,7 @@
+{
+  "name": "Draft",
+  "layer_height": 0.2,
+  "speed": 60,
+  "infill": 15,
+  "walls": 2
+}

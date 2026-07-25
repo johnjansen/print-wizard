@@ -1,0 +1,154 @@
+"""Profile compiler for the Print Wizard.
+
+Compiles a (filament, plate, quality) selection into a slicer-agnostic
+merged profile plus start/end G-code.
+
+Design notes:
+- Slicer-agnostic. The OrcaSlicer adapter that turns `merged` into a slicer
+  profile lives in Phase 2. This module owns the brain, not any one slicer's
+  format.
+- Always-empty-at-start: end.gcode unloads (M702) on every finish, so
+  start.gcode can always load (M701) without state-tracking or double-feed.
+  The operator inserts the new spool's tip into the feeder before confirming.
+- No schema library. Profiles are small and author-owned; missing keys raise
+  loudly with the profile name so typos surface immediately.
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+PROFILES_DIR = Path(__file__).resolve().parent.parent / "profiles"
+
+
+def _load(kind: str, name: str) -> dict:
+    path = PROFILES_DIR / kind / f"{name}.json"
+    if not path.exists():
+        raise FileNotFoundError(f"no {kind} profile named {name!r} at {path}")
+    return json.loads(path.read_text())
+
+
+def list_profiles(kind: str) -> list[str]:
+    d = PROFILES_DIR / kind
+    if not d.is_dir():
+        return []
+    return sorted(p.stem for p in d.glob("*.json"))
+
+
+def compile_profile(filament: str, plate: str, quality: str) -> dict:
+    """Merge a filament, plate, and quality into one slicer-agnostic profile.
+
+    Plate modifiers apply *on top of* filament baselines (e.g. bed_temp =
+    filament.bed_temp + plate.bed_temp_offset), so a single filament works
+    across both plates without per-plate duplicates.
+    """
+    f = _load("filaments", filament)
+    pl = _load("plates", plate)
+    q = _load("qualities", quality)
+
+    bed_temp = f["bed_temp"] + pl.get("bed_temp_offset", 0)
+
+    return {
+        # identity (for logging / filenames / UI)
+        "filament": filament,
+        "plate": plate,
+        "quality": quality,
+        # filament
+        "filament_diameter": f.get("filament_diameter", 1.75),
+        "nozzle_temp": f["nozzle_temp"],
+        "bed_temp": bed_temp,
+        "flow": f.get("flow", 1.0),
+        "retraction_dist": f["retraction"]["dist"],
+        "retraction_speed": f["retraction"]["speed"],
+        "fan_max": f["cooling"]["fan_max"],
+        "layer1_fan": f["cooling"]["layer1_fan"],
+        "max_volumetric_speed": f.get("max_volumetric_speed"),
+        "load_temp": f.get("load_temp", f["nozzle_temp"]),
+        "unload_temp": f.get("unload_temp", f["nozzle_temp"]),
+        # plate
+        "z_offset": pl.get("z_offset", 0.0),
+        "first_layer_height": pl.get("first_layer_height", 0.2),
+        "first_layer_speed": pl.get("first_layer_speed", 20),
+        "adhesion": pl.get("adhesion", "none"),
+        "brim_lines": pl.get("brim_lines", 0),
+        "removal_temp": pl.get("removal_temp", 0),
+        # quality
+        "layer_height": q["layer_height"],
+        "speed": q["speed"],
+        "infill": q["infill"],
+        "walls": q["walls"],
+    }
+
+
+def start_gcode(m: dict) -> str:
+    """Generated start G-code. Heats bed, loads filament, heats to print, primes."""
+    bed, load, nozzle = m["bed_temp"], m["load_temp"], m["nozzle_temp"]
+    lines = [
+        f"; start.gcode -- {m['filament']} / {m['plate']} / {m['quality']}",
+        f"M140 S{bed}        ; heat bed -> {bed}C",
+        f"M190 S{bed}        ; wait for bed",
+        f"M104 S{load}       ; heat hotend -> {load}C (load temp)",
+        f"M109 S{load}       ; wait for hotend",
+        "M701               ; auto-load filament (tip inserted at confirm)",
+        f"M104 S{nozzle}     ; heat hotend -> {nozzle}C (print temp)",
+        f"M109 S{nozzle}     ; wait for print temp",
+        "G28                ; home all axes",
+        "G1 Z5 F3000        ; lift nozzle",
+        "G92 E0             ; reset extruder",
+        "G1 X20 Y20 Z0.2 F1500  ; move to prime start",
+        "G1 E20 F200        ; prime / purge",
+        "G92 E0             ; reset extruder",
+        f"M117 printing {m['filament']}",
+    ]
+    return "\n".join(lines)
+
+
+def end_gcode(m: dict) -> str:
+    """Generated end G-code. Parks, unloads filament while hot, then cools bed
+    to a safe removal temp when the plate needs it (glass); PEI flex just turns off."""
+    lines = [
+        f"; end.gcode -- {m['filament']} / {m['plate']}",
+        "M400               ; finish pending moves",
+        "G91                ; relative positioning",
+        "G1 Z10 F3000       ; lift",
+        "G90                ; absolute positioning",
+        "G28 X Y            ; home XY (nozzle stays lifted)",
+        "M702               ; auto-unload filament (hotend still hot)",
+        "M104 S0            ; hotend off",
+    ]
+    rt = m["removal_temp"]
+    if rt and rt > 0:
+        lines += [
+            f"M140 R{rt}        ; cool bed -> {rt}C for removal",
+            f"M190 R{rt}        ; wait for bed to cool",
+        ]
+    else:
+        lines.append("M140 S0           ; bed off (flex plate, remove hot)")
+    lines += [
+        "M84                ; disable motors",
+        f"M117 done -- {m['plate']} ready to remove",
+    ]
+    return "\n".join(lines)
+
+
+def compile_all(filament: str, plate: str, quality: str) -> dict:
+    m = compile_profile(filament, plate, quality)
+    return {"merged": m, "start_gcode": start_gcode(m), "end_gcode": end_gcode(m)}
+
+
+if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) == 2 and sys.argv[1] == "list":
+        for kind in ("filaments", "plates", "qualities"):
+            print(f"{kind}: {', '.join(list_profiles(kind))}")
+        sys.exit(0)
+    if len(sys.argv) != 4:
+        print("usage: compiler.py <filament> <plate> <quality>   |   compiler.py list", file=sys.stderr)
+        sys.exit(2)
+    out = compile_all(sys.argv[1], sys.argv[2], sys.argv[3])
+    print(json.dumps(out["merged"], indent=2))
+    print("\n--- start.gcode ---")
+    print(out["start_gcode"])
+    print("\n--- end.gcode ---")
+    print(out["end_gcode"])

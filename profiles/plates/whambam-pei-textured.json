@@ -1,0 +1,10 @@
+{
+  "name": "WhamBam PEI textured (flex steel)",
+  "surface": "PEI-textured",
+  "bed_temp_offset": 0,
+  "z_offset": 0.0,
+  "first_layer_height": 0.2,
+  "first_layer_speed": 20,
+  "adhesion": "none",
+  "removal_temp": 0
+}

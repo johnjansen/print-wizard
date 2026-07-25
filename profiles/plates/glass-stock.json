@@ -1,0 +1,11 @@
+{
+  "name": "Glass plate (stock Creality)",
+  "surface": "glass",
+  "bed_temp_offset": 10,
+  "z_offset": 0.0,
+  "first_layer_height": 0.2,
+  "first_layer_speed": 20,
+  "adhesion": "brim",
+  "brim_lines": 6,
+  "removal_temp": 45
+}
