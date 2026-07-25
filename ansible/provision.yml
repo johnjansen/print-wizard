@@ -1,0 +1,111 @@
+---
+# Print Wizard -- self-provisioning playbook, run ON the Pi.
+#   cd ~/print-wizard && ansible-playbook ansible/provision.yml -e @~/.wizard-secrets.yml
+# Secrets file (not in repo) provides: octopass, ansible_become_password
+- name: Provision Print Wizard on the Pi
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  become: false
+  vars:
+    app_dir: /home/johnjansen/print-wizard
+    cura_resources: /opt/cura-resources
+    wizard_user: johnjansen
+    repo_url: https://github.com/johnjansen/print-wizard.git
+    repo_branch: master
+    octo_host: http://127.0.0.1:80
+    octo_user: johnjansen
+
+  tasks:
+    # --- root: packages + Cura defs + systemd ---
+    - name: Install apt packages (cura-engine, python3-venv, git)
+      apt:
+        name: [cura-engine, python3-venv, git]
+        update_cache: true
+      become: true
+
+    - name: Extract Cura 4.13 definitions to /opt/cura-resources
+      shell: |
+        set -e
+        mkdir -p {{ cura_resources }}
+        cd /tmp && rm -rf cura-defs cura_*.deb
+        apt-get download cura
+        dpkg-deb -x cura_*.deb /tmp/cura-defs
+        cp -a /tmp/cura-defs/usr/share/cura/resources/. {{ cura_resources }}/
+      args:
+        creates: "{{ cura_resources }}/definitions/fdmprinter.def.json"
+      become: true
+
+    - name: Install print-wizard systemd unit
+      copy:
+        dest: /etc/systemd/system/print-wizard.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Print Wizard (local SimplyPrint replacement)
+          After=network.target
+          [Service]
+          Type=simple
+          User={{ wizard_user }}
+          WorkingDirectory={{ app_dir }}/src
+          Environment=CURA_ENGINE=/usr/bin/CuraEngine
+          Environment=CURA_RESOURCES={{ cura_resources }}
+          Environment=CURA_HEADLESS_FIXES=0
+          Environment=WIZARD_HOST=0.0.0.0
+          Environment=WIZARD_PORT=8765
+          ExecStart={{ app_dir }}/.venv/bin/python server.py
+          Restart=on-failure
+          RestartSec=3
+          [Install]
+          WantedBy=multi-user.target
+      become: true
+      notify: daemon-reload
+
+    # --- johnjansen: app + venv + creds ---
+    - name: Clone/update the app
+      git:
+        repo: "{{ repo_url }}"
+        dest: "{{ app_dir }}"
+        version: "{{ repo_branch }}"
+        force: true
+
+    - name: Create venv
+      command: python3 -m venv {{ app_dir }}/.venv
+      args:
+        creates: "{{ app_dir }}/.venv/bin/python"
+
+    - name: Install Python deps into venv
+      pip:
+        requirements: "{{ app_dir }}/requirements.txt"
+        virtualenv: "{{ app_dir }}/.venv"
+
+    - name: Ensure ~/.octoprint exists
+      file:
+        path: "/home/{{ wizard_user }}/.octoprint"
+        state: directory
+        mode: "0700"
+
+    - name: Write OctoPrint creds for the wizard
+      copy:
+        dest: "/home/{{ wizard_user }}/.octoprint/creds"
+        mode: "0600"
+        content: |
+          HOST={{ octo_host }}
+          USER={{ octo_user }}
+          PASS={{ octopass }}
+      no_log: true
+
+    # --- root: enable + start service ---
+    - name: Enable and start print-wizard
+      systemd:
+        name: print-wizard
+        state: restarted
+        enabled: true
+        daemon_reload: true
+      become: true
+
+  handlers:
+    - name: daemon-reload
+      systemd:
+        daemon_reload: true
+      become: true

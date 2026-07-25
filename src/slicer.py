@@ -73,6 +73,7 @@ def _settings_from_merged(m: dict, start_gcode: str, end_gcode: str) -> dict:
         "cool_fan_speed_max": str(m["fan_max"]),
         "cool_fan_speed_0": str(m["layer1_fan"]),
         "adhesion_type": m["adhesion"],
+        "support_enable": "true" if m.get("support_enable") else "false",
         # Keep CuraEngine from prepending its own heat commands around our
         # start_gcode -- we handle heating ourselves, deterministically.
         "material_print_temp_prepend": "false",

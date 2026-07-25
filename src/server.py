@@ -87,6 +87,8 @@ PAGE = """<!doctype html>
       <div><label>Filament</label><select id="fil">__FIL_OPTS__</select></div>
       <div><label>Plate</label><select id="pla">__PLA_OPTS__</select></div>
       <div><label>Quality</label><select id="qua">__QUA_OPTS__</select></div>
+      <div><label>Adhesion</label><select id="adh"><option value="auto">auto (plate)</option><option value="none">none</option><option value="skirt">skirt</option><option value="brim">brim</option><option value="raft">raft</option></select></div>
+      <div><label>Supports</label><select id="sup"><option value="off">off</option><option value="on">on</option></select></div>
     </div>
     <label>Model (STL)</label><input type="file" id="stl" accept=".stl">
     <div style="margin-top:14px"><button id="slice" onclick="doSlice()">Slice</button></div>
@@ -126,13 +128,15 @@ async function doSlice(){
   fd.append('filament', el('fil').value);
   fd.append('plate', el('pla').value);
   fd.append('quality', el('qua').value);
+  fd.append('adhesion', el('adh').value);
+  fd.append('supports', el('sup').value);
   el('slice').disabled = true; setMsg('sliceMsg','warn','Slicing...');
   try {
     const r = await fetch('/api/slice', {method:'POST', body: fd});
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || ('HTTP '+r.status));
     const m = d.merged;
-    const cards = ['nozzle_temp','bed_temp','layer_height','speed','infill','walls','adhesion','removal_temp'];
+    const cards = ['nozzle_temp','bed_temp','layer_height','speed','infill','walls','adhesion','support_enable','removal_temp'];
     el('cards').innerHTML = cards.map(k => '<div class="card"><div class="k">'+k+'</div><div class="v">'+m[k]+'</div></div>').join('');
     el('start').textContent = d.start_gcode;
     el('end').textContent = d.end_gcode;
@@ -207,8 +211,13 @@ def api_slice():
     filament = request.form.get("filament")
     plate = request.form.get("plate")
     quality = request.form.get("quality")
+    adhesion = request.form.get("adhesion") or "auto"
+    supports = request.form.get("supports") == "on"
     bundle = compile_all(filament, plate, quality)
     m = bundle["merged"]
+    if adhesion != "auto":
+        m["adhesion"] = adhesion
+    m["support_enable"] = supports
 
     stl_path = UPLOAD_DIR / f"{pathlib.Path(f.filename).stem}.stl"
     f.save(stl_path)
