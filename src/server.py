@@ -65,8 +65,9 @@ tailwind.config = { theme: { extend: { colors: {
 </style>
 <script type="importmap">
 { "imports": {
-  "three": "https://esm.sh/three@0.160.0",
-  "three/addons/": "https://esm.sh/three@0.160.0/examples/jsm/"
+  "three": "https://esm.sh/three@0.183.2",
+  "three/addons/": "https://esm.sh/three@0.183.2/examples/jsm/",
+  "@jgphilpott/polyslice": "https://unpkg.com/@jgphilpott/polyslice/dist/index.browser.esm.js"
 }}
 </script>
 </head><body class="bg-ink text-steel font-display min-h-screen">
@@ -124,6 +125,11 @@ tailwind.config = { theme: { extend: { colors: {
               <button id="rotReset" class="px-3 py-1.5 text-xs font-mono text-steel/50 border border-line rounded-md hover:text-filament">Reset</button>
             </div>
             <p class="text-steel/40 text-[11px] font-mono mt-2">drag to orbit &middot; scroll to zoom &middot; what you see is what prints</p>
+          </div>
+          <div class="mt-4 flex items-center gap-2">
+            <span class="text-steel/50 text-xs font-mono mr-1">slicer</span>
+            <button id="slCura" class="px-3 py-1 text-xs font-mono rounded-md border border-molten bg-molten/15 text-filament">CuraEngine (Pi)</button>
+            <button id="slPoly" class="px-3 py-1 text-xs font-mono rounded-md border border-line text-steel/60">Polyslice (browser)</button>
           </div>
           <div class="mt-5 flex items-center gap-3">
             <button id="slice" class="px-5 py-2.5 rounded-lg bg-molten text-ink font-600 text-sm hover:brightness-110">Slice</button>
@@ -190,12 +196,15 @@ tailwind.config = { theme: { extend: { colors: {
 
 <script type="module">
 import * as THREE from 'three';
+window.THREE = THREE;  // Polyslice's browser bundle reads window.THREE
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import Polyslice from '@jgphilpott/polyslice';
 
 const el = id => document.getElementById(id);
 const BED = 235;
 let rot = {x:0,y:0,z:0}, flatMode = false;
+let slicerChoice = 'cura';
 
 function setMsg(id, cls, text){ el(id).innerHTML = '<span class="'+cls+'">'+text+'</span>'; }
 function fmtTime(s){ if(s==null) return '?'; const m=Math.round(s/60); return Math.floor(m/60)+'h '+(m%60)+'m'; }
@@ -285,6 +294,8 @@ function doLayFlat(){ const b=layFlatCompute(); if(!b)return; flatMode=true; rot
 
 /* ---- slice / send / start ---- */
 async function doSlice(){
+  if (slicerChoice==='poly') return sliceWithPolyslice();
+  window._browserGcode = null;
   const stl = el('stl').files[0];
   if(!stl){ setMsg('sliceMsg','text-molten','pick an STL first.'); return; }
   const fd = new FormData();
@@ -306,10 +317,47 @@ async function doSlice(){
     el('send').disabled=false; el('start').disabled=true; window._lastFile=d.octoprint_name;
   }catch(e){ setMsg('sliceMsg','text-molten',e.message); } finally{ el('slice').disabled=false; }
 }
+function setSlicer(choice){
+  slicerChoice=choice;
+  const on='px-3 py-1 text-xs font-mono rounded-md border border-molten bg-molten/15 text-filament';
+  const off='px-3 py-1 text-xs font-mono rounded-md border border-line text-steel/60';
+  el('slCura').className = choice==='cura'?on:off;
+  el('slPoly').className = choice==='poly'?on:off;
+}
+async function sliceWithPolyslice(){
+  const stl = el('stl').files[0];
+  if(!stl){ setMsg('sliceMsg','text-molten','pick an STL first.'); return; }
+  if(!mesh){ setMsg('sliceMsg','text-molten','load the STL into the viewer first.'); return; }
+  el('slice').disabled=true; setMsg('sliceMsg','text-filament','slicing in browser…');
+  try{
+    const pr=await fetch('/api/profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filament:el('fil').value,plate:el('pla').value,quality:el('qua').value,adhesion:el('adh').value,supports:el('sup').value})});
+    const P=await pr.json(); if(!pr.ok) throw new Error(P.error||('HTTP '+pr.status));
+    const m=P.merged;
+    const Printer=Polyslice.Printer, Filament=Polyslice.Filament;
+    const sl=new Polyslice({printer:new Printer('Ender3'),filament:new Filament('GenericPLA'),nozzleTemperature:m.nozzle_temp,bedTemperature:m.bed_temp,fanSpeed:m.fan_max,infillDensity:m.infill,autohome:false,progressCallback:p=>setMsg('sliceMsg','text-filament','slicing… '+Math.round((p||0)*100)+'%')});
+    const sliceMesh=new THREE.Mesh(mesh.geometry,new THREE.MeshBasicMaterial());
+    let gcode; try{ gcode=sl.slice(sliceMesh); }catch(e){ throw new Error('Polyslice: '+e.message); }
+    gcode=P.start_gcode+'\n'+gcode+'\n'+P.end_gcode;
+    const lm=gcode.match(/; Total Layers: (\d+)/); const fm=gcode.match(/; Filament Length: ([\d.]+)mm/);
+    const est={layers:lm?Number(lm[1]):null,time_seconds:null,filament_m:fm?Number(fm[1]):null,filament_g:null};
+    const cards=[['layers',est.layers||'?'],['filament',(est.filament_m?est.filament_m+'mm':'?')],['nozzle',m.nozzle_temp+'°C'],['bed',m.bed_temp+'°C'],['adhesion',m.adhesion],['supports',m.support_enable?'on':'off']];
+    el('cards').innerHTML=cards.map(c=>'<div class="bg-panel border border-line rounded-lg p-3"><div class="text-steel/40 text-[10px] font-mono uppercase tracking-wider">'+c[0]+'</div><div class="text-filament text-lg font-mono">'+c[1]+'</div></div>').join('');
+    el('start').textContent=P.start_gcode; el('end').textContent=P.end_gcode;
+    el('head').textContent=gcode.split('\n').slice(0,25).join('\n');
+    el('review').classList.remove('hidden'); el('sendSection').classList.remove('hidden');
+    const filename=stl.name.replace(/\.stl$/i,'')+'__'+m.filament+'_'+m.plate+'_'+m.quality+'_polyslice.gcode';
+    window._browserGcode=gcode; window._browserFilename=filename; window._lastFile=filename;
+    setMsg('sliceMsg','text-ok','sliced (Polyslice) → '+filename);
+    el('send').disabled=false; el('start').disabled=true;
+  }catch(e){ setMsg('sliceMsg','text-molten',e.message); } finally{ el('slice').disabled=false; }
+}
 async function doSend(){
   el('send').disabled=true; setMsg('sendMsg','text-filament','uploading…');
+  const url = window._browserGcode ? '/api/upload-gcode' : '/api/send';
+  const body = window._browserGcode ? JSON.stringify({filename:window._browserFilename,gcode:window._browserGcode}) : null;
   try{
-    const r=await fetch('/api/send',{method:'POST'}); const d=await r.json();
+    const r=await fetch(url,{method:'POST',headers:body?{'Content-Type':'application/json'}:{},body:body});
+    const d=await r.json();
     if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
     setMsg('sendMsg','text-ok','sent as '+d.octoprint_file); el('start').disabled=false; window._lastFile=d.octoprint_file;
   }catch(e){ setMsg('sendMsg','text-molten',e.message); } finally{ el('send').disabled=false; }
@@ -383,6 +431,8 @@ el('rotY').addEventListener('click',()=>doRot('y'));
 el('rotZ').addEventListener('click',()=>doRot('z'));
 el('layFlat').addEventListener('click',doLayFlat);
 el('rotReset').addEventListener('click',doReset);
+el('slCura').addEventListener('click',()=>setSlicer('cura'));
+el('slPoly').addEventListener('click',()=>setSlicer('poly'));
 el('slice').addEventListener('click',doSlice);
 el('send').addEventListener('click',doSend);
 el('start').addEventListener('click',doStart);
@@ -534,6 +584,36 @@ def api_filament_save():
     path = pathlib.Path(__file__).resolve().parent.parent / "profiles" / "filaments" / f"{slug}.json"
     path.write_text(json.dumps(profile, indent=2))
     return jsonify(ok=True, slug=slug, name=profile.get("name"))
+
+
+@app.post("/api/profile")
+def api_profile():
+    d = request.get_json(silent=True) or {}
+    filament = d.get("filament"); plate = d.get("plate"); quality = d.get("quality")
+    adhesion = d.get("adhesion") or "auto"; supports = d.get("supports") == "on"
+    bundle = compile_all(filament, plate, quality)
+    m = bundle["merged"]
+    if adhesion != "auto":
+        m["adhesion"] = adhesion
+    m["support_enable"] = supports
+    return jsonify(merged=m, start_gcode=bundle["start_gcode"], end_gcode=bundle["end_gcode"])
+
+
+@app.post("/api/upload-gcode")
+def api_upload_gcode():
+    d = request.get_json(silent=True) or {}
+    filename = d.get("filename"); gcode = d.get("gcode")
+    if not filename or not gcode:
+        return jsonify(error="filename and gcode required"), 400
+    path = UPLOAD_DIR / pathlib.Path(filename).name
+    path.write_text(gcode)
+    try:
+        out = octo().upload(str(path), select=False, print=False)
+    except Exception as e:
+        return jsonify(error=str(e)), 502
+    op_file = out.get("files", {}).get("local", {}).get("path", filename)
+    _LAST["filename"] = op_file
+    return jsonify(ok=True, octoprint_file=op_file)
 
 
 if __name__ == "__main__":
