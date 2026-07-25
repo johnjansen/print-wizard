@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import os
 import pathlib
+import json
+import re
 
 from flask import Flask, request, jsonify, Response
 
@@ -18,6 +20,7 @@ from compiler import compile_all, list_profiles
 from slicer import slice_model
 from octoprint_client import OctoPrintClient
 import stl_transform
+import aiclient
 
 app = Flask(__name__)
 UPLOAD_DIR = pathlib.Path(__file__).resolve().parent.parent / "uploads"
@@ -94,6 +97,19 @@ tailwind.config = { theme: { extend: { colors: {
         <div class="flex items-end"><div class="text-steel/40 text-[11px] font-mono leading-tight">plate adjusts bed temp,<br>adhesion &amp; removal cool</div></div>
       </div>
 
+      <div class="mt-5 flex flex-wrap items-end gap-2">
+        <div class="flex-1 min-w-[200px]"><label class="block text-steel/60 text-xs mb-1">Look up filament online</label><input id="filQuery" type="text" placeholder="e.g. Polymaker PolyTerra PLA Black" class="w-full bg-panel border border-line rounded-lg px-3 py-2 text-sm text-filament"></div>
+        <button id="filSearch" class="px-3 py-2 rounded-lg bg-panel2 border border-line text-filament text-sm hover:border-molten">Search</button>
+      </div>
+      <div id="filResult" class="mt-3 hidden">
+        <div class="text-steel/40 text-[11px] font-mono mb-1">review / edit specs (JSON), then save</div>
+        <textarea id="filJson" class="w-full bg-panel border border-line rounded-lg p-3 text-[11px] font-mono text-steel/90 h-40"></textarea>
+        <div class="flex items-center gap-2 mt-2">
+          <input id="filSlug" type="text" placeholder="slug: polymaker-polyterra-pla-black" class="flex-1 bg-panel border border-line rounded-lg px-3 py-2 text-xs font-mono text-filament">
+          <button id="filSave" class="px-3 py-2 rounded-lg bg-filament/15 border border-filament/40 text-filament text-sm hover:bg-filament/25">Save profile</button>
+        </div>
+        <div id="filMsg" class="text-sm mt-2"></div>
+      </div>
       <div class="mt-5 grid sm:grid-cols-[1fr_280px] gap-5">
         <div>
           <label class="block text-steel/60 text-xs mb-2">Model (STL)</label>
@@ -338,6 +354,28 @@ function camRefresh(){ el('cam').src='/api/camera/snapshot?ts='+Date.now(); }
 el('cam').addEventListener('error',()=>{ el('camOff').classList.remove('hidden'); el('cam').style.opacity=0; });
 el('cam').addEventListener('load',()=>{ el('camOff').classList.add('hidden'); el('cam').style.opacity=1; });
 
+async function filSearch(){
+  const q=el('filQuery').value.trim(); if(!q) return;
+  el('filSearch').disabled=true; setMsg('filMsg','text-filament','searching the web…');
+  try{
+    const r=await fetch('/api/filament/lookup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})});
+    const d=await r.json(); if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+    el('filResult').classList.remove('hidden');
+    el('filJson').value=JSON.stringify(d.profile,null,2);
+    el('filSlug').value=q.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+    setMsg('filMsg','text-ok','found specs — review and save');
+  }catch(e){ setMsg('filMsg','text-molten',e.message); } finally{ el('filSearch').disabled=false; }
+}
+async function filSave(){
+  let profile; try{ profile=JSON.parse(el('filJson').value); }catch(e){ setMsg('filMsg','text-molten','invalid JSON'); return; }
+  const slug=el('filSlug').value.trim(); if(!slug){ setMsg('filMsg','text-molten','need a slug'); return; }
+  try{
+    const r=await fetch('/api/filament/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug,profile})});
+    const d=await r.json(); if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+    setMsg('filMsg','text-ok','saved as '+slug+' — reloading…');
+    setTimeout(()=>location.reload(),800);
+  }catch(e){ setMsg('filMsg','text-molten',e.message); }
+}
 /* ---- wire up ---- */
 el('stl').addEventListener('change', e=>{ if(e.target.files[0]) loadSTL(e.target.files[0]); });
 el('rotX').addEventListener('click',()=>doRot('x'));
@@ -349,6 +387,8 @@ el('slice').addEventListener('click',doSlice);
 el('send').addEventListener('click',doSend);
 el('start').addEventListener('click',doStart);
 el('camRefresh').addEventListener('click',camRefresh);
+el('filSearch').addEventListener('click',filSearch);
+el('filSave').addEventListener('click',filSave);
 
 initViewer();
 updateRotLabel();
@@ -466,6 +506,34 @@ def api_status():
         return jsonify(octo().status())
     except Exception as e:
         return jsonify(error=str(e)), 502
+
+
+@app.post("/api/filament/lookup")
+def api_filament_lookup():
+    q = (request.get_json(silent=True) or {}).get("query")
+    if not q:
+        return jsonify(error="query required"), 400
+    try:
+        profile = aiclient.lookup_filament(q)
+    except aiclient.NoKeyError as e:
+        return jsonify(error=str(e), no_key=True), 503
+    except Exception as e:
+        return jsonify(error=str(e)), 502
+    return jsonify(profile=profile)
+
+
+@app.post("/api/filament/save")
+def api_filament_save():
+    d = request.get_json(silent=True) or {}
+    slug = (d.get("slug") or "").strip()
+    profile = d.get("profile")
+    if not slug or not profile:
+        return jsonify(error="slug and profile required"), 400
+    if not re.match(r"^[a-z0-9-]+$", slug):
+        return jsonify(error="slug must be lowercase a-z, 0-9, -"), 400
+    path = pathlib.Path(__file__).resolve().parent.parent / "profiles" / "filaments" / f"{slug}.json"
+    path.write_text(json.dumps(profile, indent=2))
+    return jsonify(ok=True, slug=slug, name=profile.get("name"))
 
 
 if __name__ == "__main__":
