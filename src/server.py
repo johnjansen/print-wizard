@@ -337,13 +337,13 @@ async function sliceWithPolyslice(){
     const sl=new Polyslice({printer:new Printer('Ender3'),filament:new Filament('GenericPLA'),nozzleTemperature:m.nozzle_temp,bedTemperature:m.bed_temp,fanSpeed:m.fan_max,infillDensity:m.infill,autohome:false,progressCallback:p=>setMsg('sliceMsg','text-filament','slicing… '+Math.round((p||0)*100)+'%')});
     const sliceMesh=new THREE.Mesh(mesh.geometry,new THREE.MeshBasicMaterial());
     let gcode; try{ gcode=sl.slice(sliceMesh); }catch(e){ throw new Error('Polyslice: '+e.message); }
-    gcode=P.start_gcode+'\n'+gcode+'\n'+P.end_gcode;
+    gcode=P.start_gcode+'\\n'+gcode+'\\n'+P.end_gcode;
     const lm=gcode.match(/; Total Layers: (\d+)/); const fm=gcode.match(/; Filament Length: ([\d.]+)mm/);
     const est={layers:lm?Number(lm[1]):null,time_seconds:null,filament_m:fm?Number(fm[1]):null,filament_g:null};
     const cards=[['layers',est.layers||'?'],['filament',(est.filament_m?est.filament_m+'mm':'?')],['nozzle',m.nozzle_temp+'°C'],['bed',m.bed_temp+'°C'],['adhesion',m.adhesion],['supports',m.support_enable?'on':'off']];
     el('cards').innerHTML=cards.map(c=>'<div class="bg-panel border border-line rounded-lg p-3"><div class="text-steel/40 text-[10px] font-mono uppercase tracking-wider">'+c[0]+'</div><div class="text-filament text-lg font-mono">'+c[1]+'</div></div>').join('');
     el('start').textContent=P.start_gcode; el('end').textContent=P.end_gcode;
-    el('head').textContent=gcode.split('\n').slice(0,25).join('\n');
+    el('head').textContent=gcode.split('\\n').slice(0,25).join('\\n');
     el('review').classList.remove('hidden'); el('sendSection').classList.remove('hidden');
     const filename=stl.name.replace(/\.stl$/i,'')+'__'+m.filament+'_'+m.plate+'_'+m.quality+'_polyslice.gcode';
     window._browserGcode=gcode; window._browserFilename=filename; window._lastFile=filename;
