@@ -155,11 +155,16 @@ tailwind.config = { theme: { extend: { colors: {
 
     <section id="sendSection" class="hidden">
       <h2 class="text-steel/50 text-xs font-mono uppercase tracking-[0.2em] mb-4">03 / Send &amp; print</h2>
+      <div id="removalGate" class="hidden mb-3 p-3 rounded-lg border border-filament/40 bg-filament/10 flex items-center justify-between gap-3 flex-wrap">
+        <span class="text-filament text-sm">Previous print finished — confirm the bed is clear before starting the next one.</span>
+        <button id="printRemoved" class="px-3 py-1.5 rounded-md bg-ok/20 border border-ok/40 text-ok text-sm font-600 hover:bg-ok/30 whitespace-nowrap">Print removed</button>
+      </div>
       <div class="flex flex-wrap items-center gap-3">
         <button id="send" class="px-4 py-2 rounded-lg bg-panel2 border border-line text-filament text-sm font-600 hover:border-filament">Send G-code to OctoPrint</button>
         <button id="start" class="px-4 py-2 rounded-lg bg-ok/15 border border-ok/40 text-ok text-sm font-600 hover:bg-ok/25">Print it? Yes</button>
       </div>
       <p class="text-steel/50 text-xs mt-3 max-w-md">Insert the filament tip into the feeder, then confirm. Start is blocked while the printer is busy.</p>
+      <div id="startNote" class="text-steel/40 text-xs font-mono mt-1"></div>
       <div id="sendMsg" class="text-sm mt-2"></div>
       <div id="startMsg" class="text-sm mt-2"></div>
     </section>
@@ -225,16 +230,21 @@ function initViewer(){
   camera.position.set(180, 200, 260);
   renderer = new THREE.WebGLRenderer({antialias:true});
   renderer.setSize(wrap.clientWidth, wrap.clientWidth);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   wrap.appendChild(renderer.domElement);
   controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(BED/2, 0, BED/2);
   controls.update();
   scene.add(new THREE.AmbientLight(0xffffff, 0.55));
   const dl = new THREE.DirectionalLight(0xffffff, 1.0); dl.position.set(150,250,180); scene.add(dl);
+  dl.castShadow = true;
+  dl.shadow.mapSize.set(1024,1024);
+  Object.assign(dl.shadow.camera, {left:-130, right:130, top:130, bottom:-130, near:50, far:600});
   const dl2 = new THREE.DirectionalLight(0xff6a3d, 0.25); dl2.position.set(-150,120,-120); scene.add(dl2);
-  // bed
+  // bed -- receives the model's contact shadow so a floating vs. flush model is visually obvious
   const bed = new THREE.Mesh(new THREE.PlaneGeometry(BED,BED), new THREE.MeshStandardMaterial({color:0x0E1116,metalness:0,roughness:1}));
-  bed.rotation.x = -Math.PI/2; bed.position.set(BED/2,0,BED/2); scene.add(bed);
+  bed.rotation.x = -Math.PI/2; bed.position.set(BED/2,0,BED/2); bed.receiveShadow = true; scene.add(bed);
   const grid = new THREE.GridHelper(BED, 23, 0x2A313C, 0x2A313C); grid.position.set(BED/2,0.1,BED/2); scene.add(grid);
   const resize=()=>{ const w=wrap.clientWidth; renderer.setSize(w,w); camera.aspect=1; camera.updateProjectionMatrix(); };
   new ResizeObserver(resize).observe(wrap);
@@ -272,6 +282,7 @@ function applyOrientation(){
   mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color:0xE8D9B5, metalness:0.1, roughness:0.6, flatShading:false}));
   mesh.rotation.x = -Math.PI/2;  // STL Z-up -> three Y-up for display
   mesh.position.set(BED/2, 0, BED/2);  // sit centered on the bed
+  mesh.castShadow = true;
   scene.add(mesh);
 }
 
@@ -294,6 +305,16 @@ function doReset(){ flatMode=false; rot={x:0,y:0,z:0}; updateRotLabel(); applyOr
 function doLayFlat(){ const b=layFlatCompute(); if(!b)return; flatMode=true; rot={x:b.x,y:b.y,z:0}; updateRotLabel(); applyOrientation(); }
 
 /* ---- slice / send / start ---- */
+let sentReady=false, liveBusy=false, awaitingRemoval=false, wasBusy=null;
+function refreshStartButton(){
+  el('start').disabled = !sentReady || liveBusy || awaitingRemoval;
+  let note='';
+  if(sentReady && liveBusy) note='blocked: printer is currently busy';
+  else if(sentReady && awaitingRemoval) note='blocked: confirm the bed is clear (see above)';
+  el('startNote').textContent=note;
+}
+function updateRemovalBanner(){ el('removalGate').classList.toggle('hidden', !awaitingRemoval); }
+el('printRemoved').addEventListener('click',()=>{ awaitingRemoval=false; updateRemovalBanner(); refreshStartButton(); });
 async function doSlice(){
   if (slicerChoice==='poly') return sliceWithPolyslice();
   window._browserGcode = null;
@@ -315,7 +336,7 @@ async function doSlice(){
     el('start').textContent=d.start_gcode; el('end').textContent=d.end_gcode; el('head').textContent=d.gcode_head;
     el('review').classList.remove('hidden'); el('sendSection').classList.remove('hidden');
     setMsg('sliceMsg','text-ok','sliced → '+d.filename);
-    el('send').disabled=false; el('start').disabled=true; window._lastFile=d.octoprint_name;
+    el('send').disabled=false; sentReady=false; refreshStartButton(); window._lastFile=d.octoprint_name;
   }catch(e){ setMsg('sliceMsg','text-molten',e.message); } finally{ el('slice').disabled=false; }
 }
 function setSlicer(choice){
@@ -353,7 +374,7 @@ async function sliceWithPolyslice(){
     const filename=stl.name.replace(/\.stl$/i,'')+'__'+m.filament+'_'+m.plate+'_'+m.quality+'_polyslice.gcode';
     window._browserGcode=gcode; window._browserFilename=filename; window._lastFile=filename;
     setMsg('sliceMsg','text-ok','sliced (Polyslice) → '+filename);
-    el('send').disabled=false; el('start').disabled=true;
+    el('send').disabled=false; sentReady=false; refreshStartButton();
   }catch(e){ setMsg('sliceMsg','text-molten',e.message); } finally{ el('slice').disabled=false; }
 }
 async function doSend(){
@@ -364,7 +385,7 @@ async function doSend(){
     const r=await fetch(url,{method:'POST',headers:body?{'Content-Type':'application/json'}:{},body:body});
     const d=await r.json();
     if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
-    setMsg('sendMsg','text-ok','sent as '+d.octoprint_file); el('start').disabled=false; window._lastFile=d.octoprint_file;
+    setMsg('sendMsg','text-ok','sent as '+d.octoprint_file); sentReady=true; refreshStartButton(); window._lastFile=d.octoprint_file;
   }catch(e){ setMsg('sendMsg','text-molten',e.message); } finally{ el('send').disabled=false; }
 }
 async function doStart(){
@@ -373,7 +394,7 @@ async function doStart(){
     const r=await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target:window._lastFile})});
     const d=await r.json(); if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
     setMsg('startMsg','text-ok','print started');
-  }catch(e){ setMsg('startMsg','text-molten',e.message); } finally{ el('start').disabled=false; }
+  }catch(e){ setMsg('startMsg','text-molten',e.message); } finally{ refreshStartButton(); }
 }
 
 /* ---- status ---- */
@@ -388,7 +409,9 @@ function renderThermal(t){
 }
 async function pollStatus(){
   try{
-    const d=await (await fetch('/api/status')).json();
+    const r=await fetch('/api/status');
+    const d=await r.json();
+    if(!r.ok || d.error) throw new Error(d.error||('HTTP '+r.status));
     const cls=d.busy?'text-filament border-filament/40':'text-ok border-ok/40';
     el('hdrState').className='px-2 py-1 rounded-full border font-mono text-xs '+cls;
     el('hdrState').textContent=d.state;
@@ -399,7 +422,15 @@ async function pollStatus(){
     el('compFile').textContent=d.file||'';
     el('compLeft').textContent=d.busy?fmtTime(d.print_time_left)+' left':'';
     renderStack(d.completion); renderThermal(d.temps);
-  }catch(e){}
+    liveBusy=!!d.busy;
+    if(wasBusy===true && !liveBusy) awaitingRemoval=true;
+    wasBusy=liveBusy;
+    updateRemovalBanner(); refreshStartButton();
+  }catch(e){
+    el('hdrState').className='px-2 py-1 rounded-full border font-mono text-xs text-molten border-molten/40';
+    el('hdrState').textContent='connection lost';
+    el('compState').textContent='status unavailable';
+  }
 }
 
 /* ---- camera ---- */
