@@ -105,7 +105,10 @@ def start_gcode(m: dict) -> str:
         f"M190 S{bed}        ; wait for bed",
         f"M104 S{load}       ; heat hotend -> {load}C (load temp)",
         f"M109 S{load}       ; wait for hotend",
-        "M701               ; auto-load filament (tip inserted at confirm)",
+        "G91                ; relative positioning",
+        "G1 E90 F1200       ; feed filament to hotend (tip inserted at confirm)",
+        "G1 E10 F300        ; slow final feed + prime",
+        "G90                ; absolute positioning",
         f"M104 S{nozzle}     ; heat hotend -> {nozzle}C (print temp)",
         f"M109 S{nozzle}     ; wait for print temp",
         "G28                ; home all axes",
@@ -129,7 +132,10 @@ def end_gcode(m: dict) -> str:
         "G1 Z10 F3000       ; lift",
         "G90                ; absolute positioning",
         "G28 X Y            ; home XY (nozzle stays lifted)",
-        "M702               ; auto-unload filament (hotend still hot)",
+        "G91                ; relative positioning",
+        "G1 E-2 F300        ; break tack, small pull away from nozzle",
+        "G1 E-90 F1200      ; retract filament clear of extruder drive gears",
+        "G90                ; absolute positioning",
         "M104 S0            ; hotend off",
     ]
     rt = m["removal_temp"]
