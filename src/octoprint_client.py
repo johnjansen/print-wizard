@@ -73,11 +73,26 @@ class OctoPrintClient:
     def _write_headers(self) -> dict:
         return {"X-CSRF-Token": self._csrf()}
 
+    def _request(self, fn):
+        """Run fn() -> requests.Response, retrying once after a fresh login if
+        OctoPrint's session has silently expired. The service holds one
+        OctoPrintClient for its entire (multi-hour+) uptime, so _logged_in
+        going stale is the normal case, not an edge case: OctoPrint then
+        rejects every request with 403 forever, since nothing else ever resets
+        it. fn must be safe to call twice -- a 403 means OctoPrint rejected
+        the request before acting on it, so no write has happened yet."""
+        self._ensure()
+        r = fn()
+        if r.status_code == 403:
+            self._logged_in = False
+            self.login()
+            r = fn()
+        r.raise_for_status()
+        return r
+
     # --- read ---
     def get(self, path: str) -> dict:
-        self._ensure()
-        r = self.s.get(f"{self.host}/api/{path.lstrip('/')}", timeout=15)
-        r.raise_for_status()
+        r = self._request(lambda: self.s.get(f"{self.host}/api/{path.lstrip('/')}", timeout=15))
         return r.json()
 
     def status(self) -> dict:
@@ -103,32 +118,32 @@ class OctoPrintClient:
 
     # --- write ---
     def upload(self, gcode_path: str, select: bool = False, print: bool = False) -> dict:
-        self._ensure()
         p = pathlib.Path(gcode_path)
-        with p.open("rb") as fh:
-            files = {"file": (p.name, fh, "text/plain")}
-            data = {"select": "true" if select else "false", "print": "true" if print else "false"}
-            r = self.s.post(
-                f"{self.host}/api/files/local",
-                files=files,
-                data=data,
-                headers=self._write_headers(),
-                timeout=120,
-            )
-        r.raise_for_status()
+
+        def attempt():
+            with p.open("rb") as fh:
+                files = {"file": (p.name, fh, "text/plain")}
+                data = {"select": "true" if select else "false", "print": "true" if print else "false"}
+                return self.s.post(
+                    f"{self.host}/api/files/local",
+                    files=files,
+                    data=data,
+                    headers=self._write_headers(),
+                    timeout=120,
+                )
+
+        r = self._request(attempt)
         return r.json()
 
     def select_and_print(self, target_path: str, print: bool = True) -> dict:
         """target_path is the OctoPrint local path, e.g. 'myprint.gcode'."""
-        self._ensure()
         url = f"{self.host}/api/files/local/{urllib.parse.quote(target_path)}"
-        r = self.s.post(
+        r = self._request(lambda: self.s.post(
             url,
             json={"command": "select", "print": print},
             headers=self._write_headers(),
             timeout=15,
-        )
-        r.raise_for_status()
+        ))
         return r.json() if r.content else {}
 
     def require_idle(self, action: str) -> None:
@@ -147,14 +162,12 @@ class OctoPrintClient:
         """Queues raw G-code lines to the printer over serial (fire-and-forget --
         OctoPrint returns as soon as it's queued, not once the printer finishes
         executing them)."""
-        self._ensure()
-        r = self.s.post(
+        self._request(lambda: self.s.post(
             f"{self.host}/api/printer/command",
             json={"commands": commands},
             headers=self._write_headers(),
             timeout=15,
-        )
-        r.raise_for_status()
+        ))
 
 
 if __name__ == "__main__":
