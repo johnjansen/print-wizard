@@ -43,11 +43,13 @@ HEADLESS_FIXES = os.environ.get("CURA_HEADLESS_FIXES", "1") != "0"
 # Cura 5.13 settings with no headless default that abort the slice if unset.
 _HEADLESS_FIXES = {"roofing_layer_count": "0", "flooring_layer_count": "0"}
 
-# Ender-3 bed/nozzle. Harmless when the machine def already sets them; required
-# if CURA_MACHINE_DEF is fdmprinter.def.json (no machine dimensions).
+# Ender-3 bed/nozzle -- matches the OctoPrint printer profile's configured
+# build volume (220x220x250, origin lowerleft). Harmless when the machine def
+# already sets them; required if CURA_MACHINE_DEF is fdmprinter.def.json (no
+# machine dimensions).
 _MACHINE_DIMS = {
-    "machine_width": "235",
-    "machine_depth": "235",
+    "machine_width": "220",
+    "machine_depth": "220",
     "machine_height": "250",
     "machine_nozzle_size": "0.4",
 }
