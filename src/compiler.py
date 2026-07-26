@@ -106,7 +106,7 @@ def start_gcode(m: dict) -> str:
         f"M104 S{load}       ; heat hotend -> {load}C (load temp)",
         f"M109 S{load}       ; wait for hotend",
         "M83                ; extruder relative mode (G91/G90 don't reliably cover E)",
-        "G1 E90 F1200       ; feed filament to hotend (tip inserted at confirm)",
+        "G1 E150 F1200      ; feed filament to hotend (tip inserted at confirm)",
         "G1 E10 F300        ; slow final feed + prime",
         "M82                ; extruder absolute mode",
         f"M104 S{nozzle}     ; heat hotend -> {nozzle}C (print temp)",
@@ -134,7 +134,7 @@ def end_gcode(m: dict) -> str:
         "G28 X Y            ; home XY (nozzle stays lifted)",
         "M83                ; extruder relative mode (G91/G90 don't reliably cover E)",
         "G1 E-2 F300        ; break tack, small pull away from nozzle",
-        "G1 E-90 F1200      ; retract filament clear of extruder drive gears",
+        "G1 E-150 F1200     ; retract filament clear of extruder drive gears",
         "M82                ; extruder absolute mode",
         "M104 S0            ; hotend off",
     ]
