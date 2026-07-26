@@ -709,6 +709,18 @@ def api_status():
         return jsonify(error=str(e)), 502
 
 
+def _safe_temp(value, label: str) -> float:
+    """Validates a temperature pulled from a filament profile before it's
+    interpolated into raw G-code sent over serial. Profiles are user-editable
+    (via /api/filament/save), so a non-numeric or out-of-range value here would
+    otherwise land verbatim in an M104/M109 line on the live printer."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be a number, got {value!r}")
+    if not (0 <= value <= 320):
+        raise ValueError(f"{label} out of range: {value!r}")
+    return value
+
+
 @app.post("/api/filament/eject")
 def api_filament_eject():
     filament = (request.get_json(silent=True) or {}).get("filament")
@@ -717,10 +729,12 @@ def api_filament_eject():
     try:
         octo().require_idle("eject filament")
         f = get_filament(filament)
-        temp = f["unload_temp"]
+        temp = _safe_temp(f["unload_temp"], "unload_temp")
         octo().send_gcode([f"M104 S{temp}", f"M109 S{temp}", "M702"])
     except FileNotFoundError as e:
         return jsonify(error=str(e)), 404
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
     except RuntimeError as e:
         return jsonify(error=str(e), state=octo().status().get("state")), 409
     except Exception as e:
@@ -736,10 +750,12 @@ def api_filament_load():
     try:
         octo().require_idle("load filament")
         f = get_filament(filament)
-        temp = f["load_temp"]
+        temp = _safe_temp(f["load_temp"], "load_temp")
         octo().send_gcode([f"M104 S{temp}", f"M109 S{temp}", "M701"])
     except FileNotFoundError as e:
         return jsonify(error=str(e)), 404
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
     except RuntimeError as e:
         return jsonify(error=str(e), state=octo().status().get("state")), 409
     except Exception as e:
