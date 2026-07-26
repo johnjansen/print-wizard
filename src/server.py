@@ -732,7 +732,7 @@ def api_filament_eject():
         temp = _safe_temp(f["unload_temp"], "unload_temp")
         octo().send_gcode([
             f"M104 S{temp}", f"M109 S{temp}",
-            "G91", "G1 E-2 F300", "G1 E-90 F1200", "G90",
+            "M83", "G1 E-2 F300", "G1 E-90 F1200", "M82",
         ])
     except FileNotFoundError as e:
         return jsonify(error=str(e)), 404
@@ -756,7 +756,7 @@ def api_filament_load():
         temp = _safe_temp(f["load_temp"], "load_temp")
         octo().send_gcode([
             f"M104 S{temp}", f"M109 S{temp}",
-            "G91", "G1 E90 F1200", "G1 E10 F300", "G90",
+            "M83", "G1 E90 F1200", "G1 E10 F300", "M82",
         ])
     except FileNotFoundError as e:
         return jsonify(error=str(e)), 404
