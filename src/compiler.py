@@ -16,12 +16,20 @@ Design notes:
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 PROFILES_DIR = Path(__file__).resolve().parent.parent / "profiles"
 
+# Profile names reach _load() from HTTP request bodies (filament/plate/quality
+# selectors). Restricting to this charset before building a path blocks
+# traversal (e.g. "../../etc/passwd") regardless of caller.
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
+
 
 def _load(kind: str, name: str) -> dict:
+    if not name or not _SAFE_NAME.match(name):
+        raise FileNotFoundError(f"no {kind} profile named {name!r}")
     path = PROFILES_DIR / kind / f"{name}.json"
     if not path.exists():
         raise FileNotFoundError(f"no {kind} profile named {name!r} at {path}")
