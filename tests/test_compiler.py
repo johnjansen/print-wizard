@@ -30,15 +30,16 @@ def test_glass_pla_standard():
 
 def test_pex_draft_no_cooldown():
     m = compile_profile("polymaker-polyterra-pla-black", "whambam-pex-textured", "draft")
-    # PEX: no offset, no adhesion, no cooldown
-    assert m["bed_temp"] == 60, f"PEX bed_temp {m['bed_temp']}"
+    # PEX (WhamBam spec, PLA): +10 bed offset -> 70C, squished first layer, no adhesion aid, no cooldown
+    assert m["bed_temp"] == 70, f"PEX bed_temp {m['bed_temp']}"
     assert m["adhesion"] == "none"
     assert m["removal_temp"] == 0
     assert m["layer_height"] == 0.2  # draft
+    assert m["first_layer_height"] == 0.1, "PEX PLA wants a squished (half-height) first layer"
     e = end_gcode(m)
     assert "M702" in e
-    assert "M140 S0" in e, "PEI should bed-off (remove hot)"
-    assert "R0" not in e, "PEI should not emit a cooldown wait"
+    assert "M140 S0" in e, "PEX should bed-off (remove hot)"
+    assert "R0" not in e, "PEX should not emit a cooldown wait"
 
 
 def test_load_temp_defaults_to_nozzle():
