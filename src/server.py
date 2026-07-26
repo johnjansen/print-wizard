@@ -193,7 +193,7 @@ tailwind.config = { theme: { extend: { colors: {
         <button id="filEject" class="px-3 py-2 rounded-lg bg-panel2 border border-line text-filament text-sm hover:border-molten">Eject</button>
         <button id="filLoad" class="px-3 py-2 rounded-lg bg-panel2 border border-line text-filament text-sm hover:border-molten">Load</button>
       </div>
-      <p class="text-steel/50 text-xs mt-3">Uses the filament selected in Step 01 — set it to what's currently loaded before Eject, and to what you're inserting before Load. Insert the tip before clicking Load. Both heat first, then run auto-unload (M702) / auto-load (M701). Blocked while printing.</p>
+      <p class="text-steel/50 text-xs mt-3">Uses the filament selected in Step 01 — set it to what's currently loaded before Eject, and to what you're inserting before Load. Insert the tip before clicking Load. Both heat first, then drive the extruder to retract/feed. Blocked while printing.</p>
       <div id="filChangeMsg" class="text-sm mt-2"></div>
     </section>
 
@@ -532,7 +532,7 @@ async function filEject(){
   el('filEject').disabled=true; setMsg('filChangeMsg','text-filament','heating & ejecting…');
   try{
     const d=await fetchJsonOrThrow('/api/filament/eject',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filament})});
-    setMsg('filChangeMsg','text-ok','heating to '+d.temp+'° then auto-unload (M702) — watch the hotend temp above');
+    setMsg('filChangeMsg','text-ok','heating to '+d.temp+'° then retracting to eject — watch the hotend temp above');
   }catch(e){ setMsg('filChangeMsg','text-molten',e.message); } finally{ refreshFilButtons(); }
 }
 async function filLoad(){
@@ -540,7 +540,7 @@ async function filLoad(){
   el('filLoad').disabled=true; setMsg('filChangeMsg','text-filament','heating & loading…');
   try{
     const d=await fetchJsonOrThrow('/api/filament/load',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filament})});
-    setMsg('filChangeMsg','text-ok','heating to '+d.temp+'° then auto-load (M701) — watch the hotend temp above');
+    setMsg('filChangeMsg','text-ok','heating to '+d.temp+'° then feeding to load — watch the hotend temp above');
   }catch(e){ setMsg('filChangeMsg','text-molten',e.message); } finally{ refreshFilButtons(); }
 }
 async function filCooldown(){
@@ -730,7 +730,10 @@ def api_filament_eject():
         octo().require_idle("eject filament")
         f = get_filament(filament)
         temp = _safe_temp(f["unload_temp"], "unload_temp")
-        octo().send_gcode([f"M104 S{temp}", f"M109 S{temp}", "M702"])
+        octo().send_gcode([
+            f"M104 S{temp}", f"M109 S{temp}",
+            "G91", "G1 E-2 F300", "G1 E-90 F1200", "G90",
+        ])
     except FileNotFoundError as e:
         return jsonify(error=str(e)), 404
     except ValueError as e:
@@ -751,7 +754,10 @@ def api_filament_load():
         octo().require_idle("load filament")
         f = get_filament(filament)
         temp = _safe_temp(f["load_temp"], "load_temp")
-        octo().send_gcode([f"M104 S{temp}", f"M109 S{temp}", "M701"])
+        octo().send_gcode([
+            f"M104 S{temp}", f"M109 S{temp}",
+            "G91", "G1 E90 F1200", "G1 E10 F300", "G90",
+        ])
     except FileNotFoundError as e:
         return jsonify(error=str(e)), 404
     except ValueError as e:

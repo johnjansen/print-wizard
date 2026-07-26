@@ -107,6 +107,13 @@
         daemon_reload: true
       become: true
 
+    # --- johnjansen: auto-converge on origin/master ---
+    - name: Install autoconverge cron job (polls origin/master every 5 min)
+      cron:
+        name: "print-wizard autoconverge"
+        minute: "*/5"
+        job: "flock -n /tmp/print-wizard-deploy.lock {{ app_dir }}/deploy/autoconverge.sh >> /home/{{ wizard_user }}/print-wizard-deploy.log 2>&1"
+
   handlers:
     - name: daemon-reload
       systemd:
