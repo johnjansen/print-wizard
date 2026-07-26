@@ -17,6 +17,7 @@ import math
 import struct
 
 BED = 235.0
+MAX_HEIGHT = 250.0
 
 
 def _parse(b: bytes):
@@ -86,23 +87,54 @@ def _apply(tris, x, y, z):
     return [tuple(_rz(_ry(_rx(v, x), y), z) for v in tri) for tri in tris]
 
 
-def _normalize(tris):
-    if not tris:
-        return tris
+def _bbox(tris):
     xs = [v[0] for tri in tris for v in tri]
     ys = [v[1] for tri in tris for v in tri]
     zs = [v[2] for tri in tris for v in tri]
-    minx, miny, minz = min(xs), min(ys), min(zs)
-    maxx, maxy = max(xs), max(ys)
-    dx = (BED - (maxx - minx)) / 2 - minx
-    dy = (BED - (maxy - miny)) / 2 - miny
+    return min(xs), max(xs), min(ys), max(ys), min(zs), max(zs)
+
+
+def _normalize(tris):
+    if not tris:
+        return tris
+    minx, maxx, miny, maxy, minz, _ = _bbox(tris)
+    # CuraEngine's headless CLI (-l model.stl) treats the STL's raw vertex
+    # coordinates as bed-center-relative scene coordinates, then adds
+    # machine_width/2 and machine_depth/2 when it emits final corner-origin
+    # G-code. So the model must be centered at STL-space (0, 0), not at
+    # (BED/2, BED/2) -- confirmed empirically: centering at BED/2 here still
+    # sliced a part fully off the physical bed. Z has no such transform, so
+    # it's floored to 0 as usual.
+    dx = -(minx + maxx) / 2
+    dy = -(miny + maxy) / 2
     dz = -minz
     return [tuple((v[0] + dx, v[1] + dy, v[2] + dz) for v in tri) for tri in tris]
 
 
+def normalize(b: bytes) -> bytes:
+    """Center XY on the bed and drop the model to Z=0, with no rotation.
+
+    Uploaded STLs commonly carry whatever origin their CAD tool used, which
+    can be nowhere near the bed. rotate()/lay_flat() already normalize as a
+    side effect of reorienting; this covers the plain "slice it as-is" path,
+    which used to leave coordinates untouched and could silently place a
+    model partly off the bed.
+    """
+    return _write_binary(_normalize(_parse(b)))
+
+
+def dims(b: bytes) -> tuple[float, float, float]:
+    """Bounding-box (width, depth, height) in mm, for a bed-fit check."""
+    tris = _parse(b)
+    if not tris:
+        return (0.0, 0.0, 0.0)
+    minx, maxx, miny, maxy, minz, maxz = _bbox(tris)
+    return (maxx - minx, maxy - miny, maxz - minz)
+
+
 def rotate(b: bytes, x: int = 0, y: int = 0, z: int = 0) -> bytes:
     if x % 4 == 0 and y % 4 == 0 and z % 4 == 0:
-        return b  # identity -> leave uploaded coords untouched
+        return normalize(b)
     tris = _apply(_parse(b), x, y, z)
     return _write_binary(_normalize(tris))
 

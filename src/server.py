@@ -621,6 +621,22 @@ def api_slice():
         stl_path.write_bytes(stl_transform.lay_flat(stl_path.read_bytes()))
     elif rx or ry or rz:
         stl_path.write_bytes(stl_transform.rotate(stl_path.read_bytes(), rx, ry, rz))
+    else:
+        # Always normalize, even with no rotation requested -- an STL's raw
+        # coordinates can sit anywhere depending on its CAD origin, and
+        # without this a straight slice can place the model off the bed.
+        stl_path.write_bytes(stl_transform.normalize(stl_path.read_bytes()))
+
+    w, d, h = stl_transform.dims(stl_path.read_bytes())
+    if w > stl_transform.BED or d > stl_transform.BED:
+        return jsonify(error=(
+            f"model footprint is {w:.1f}x{d:.1f}mm -- too large for the "
+            f"{stl_transform.BED:.0f}x{stl_transform.BED:.0f}mm bed"
+        )), 400
+    if h > stl_transform.MAX_HEIGHT:
+        return jsonify(error=(
+            f"model is {h:.1f}mm tall -- exceeds {stl_transform.MAX_HEIGHT:.0f}mm max build height"
+        )), 400
 
     octo_name = f"{pathlib.Path(f.filename).stem}__{filament}_{plate}_{quality}.gcode"
     gcode_path = UPLOAD_DIR / octo_name
