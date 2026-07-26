@@ -336,8 +336,9 @@ let sentReady=false, liveBusy=false, awaitingRemoval=false, wasBusy=null;
 function refreshStartButton(){
   el('start').disabled = !sentReady || liveBusy || awaitingRemoval;
   let note='';
-  if(sentReady && liveBusy) note='blocked: printer is currently busy';
-  else if(sentReady && awaitingRemoval) note='blocked: confirm the bed is clear (see above)';
+  if(!sentReady) note='blocked: send the G-code to OctoPrint first';
+  else if(liveBusy) note='blocked: printer is currently busy';
+  else if(awaitingRemoval) note='blocked: confirm the bed is clear (see above)';
   el('startNote').textContent=note;
 }
 function updateRemovalBanner(){ el('removalGate').classList.toggle('hidden', !awaitingRemoval); }
