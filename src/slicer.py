@@ -131,9 +131,20 @@ def slice_model(
 def parse_estimates(gcode_path: str) -> dict:
     est = {"time_seconds": None, "layers": 0, "filament_m": None, "filament_g": None}
     text = pathlib.Path(gcode_path).read_text(errors="replace")
-    m = re.search(r"^;TIME:(\d+)", text, re.M)
-    if m:
-        est["time_seconds"] = int(m.group(1))
+    # The ;TIME: header is a placeholder CuraEngine reserves before slicing and
+    # normally rewrites afterward -- but that rewrite is done by the desktop
+    # app's Python side, not the headless CLI we invoke, so it's left at a
+    # bogus fixed value (confirmed: identical "6666" across unrelated slices,
+    # alongside equally-bogus MINX/MAXX sentinel placeholders). The real,
+    # honestly-computed total is the last ;TIME_ELAPSED: comment CuraEngine
+    # writes after each layer as it slices.
+    elapsed = re.findall(r"^;TIME_ELAPSED:([\d.]+)", text, re.M)
+    if elapsed:
+        est["time_seconds"] = int(float(elapsed[-1]))
+    else:
+        m = re.search(r"^;TIME:(\d+)", text, re.M)
+        if m:
+            est["time_seconds"] = int(m.group(1))
     m = re.search(r"^;Filament used:\s*([\d.]+)\s*m", text, re.M)
     if m:
         est["filament_m"] = float(m.group(1))
