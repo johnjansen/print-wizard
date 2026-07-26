@@ -54,7 +54,7 @@
           Environment=WIZARD_HOST=0.0.0.0
           Environment=WIZARD_PORT=8765
           Environment=ANTHROPIC_API_KEY={{ anthropic_api_key | default("") }}
-          Environment=ANTHROPIC_MODEL={{ anthropic_model | default("") }}
+          Environment=ANTHROPIC_MODEL={{ anthropic_model | default("claude-sonnet-5") }}
           ExecStart={{ app_dir }}/.venv/bin/python server.py
           Restart=on-failure
           RestartSec=3
