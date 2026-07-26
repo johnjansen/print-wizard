@@ -131,13 +131,30 @@ class OctoPrintClient:
         r.raise_for_status()
         return r.json() if r.content else {}
 
+    def require_idle(self, action: str) -> None:
+        """Raises RuntimeError with the current state if the printer is busy."""
+        st = self.status()
+        if st["busy"]:
+            raise RuntimeError(f"printer is {st['state']!r}, not idle -- refusing to {action}")
+
     def start_print(self, target_path: str) -> dict:
         """Gated start: refuses while the printer is busy. Returns the select
         response, or raises RuntimeError with the current state if not idle."""
-        st = self.status()
-        if st["busy"]:
-            raise RuntimeError(f"printer is {st['state']!r}, not idle -- refusing to start")
+        self.require_idle("start")
         return self.select_and_print(target_path, print=True)
+
+    def send_gcode(self, commands: list[str]) -> None:
+        """Queues raw G-code lines to the printer over serial (fire-and-forget --
+        OctoPrint returns as soon as it's queued, not once the printer finishes
+        executing them)."""
+        self._ensure()
+        r = self.s.post(
+            f"{self.host}/api/printer/command",
+            json={"commands": commands},
+            headers=self._write_headers(),
+            timeout=15,
+        )
+        r.raise_for_status()
 
 
 if __name__ == "__main__":

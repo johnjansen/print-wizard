@@ -35,6 +35,12 @@ def list_profiles(kind: str) -> list[str]:
     return sorted(p.stem for p in d.glob("*.json"))
 
 
+def get_filament(name: str) -> dict:
+    """Raw filament profile, for standalone actions (e.g. filament change)
+    that need load_temp/unload_temp without compiling a full print profile."""
+    return _load("filaments", name)
+
+
 def compile_profile(filament: str, plate: str, quality: str) -> dict:
     """Merge a filament, plate, and quality into one slicer-agnostic profile.
 
