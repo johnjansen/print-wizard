@@ -66,7 +66,7 @@ On the Pi the wizard's creds point at `http://127.0.0.1:80` (same machine).
 
 - Filaments: 1 (Polymaker PolyTerra PLA Black). Add more in `profiles/filaments/`.
 - Plates: glass-stock (+10C bed, brim, cool-to-45 removal), whambam-pex-textured
-  (no offset, no adhesion, remove-hot).
+  (+10C bed per WhamBam spec, squished first layer, no adhesion, remove-hot).
 - Qualities: draft / standard / fine.
 - UI overrides: adhesion (auto/none/skirt/brim/raft), supports (on/off).
 - M701/M702 firmware support: confirm with M115 once the printer is idle.

@@ -1,9 +1,9 @@
 {
   "name": "WhamBam PEX textured (flex steel)",
   "surface": "PEX-textured",
-  "bed_temp_offset": 0,
+  "bed_temp_offset": 10,
   "z_offset": 0.0,
-  "first_layer_height": 0.2,
+  "first_layer_height": 0.1,
   "first_layer_speed": 20,
   "adhesion": "none",
   "removal_temp": 0

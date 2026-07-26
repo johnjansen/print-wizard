@@ -147,7 +147,7 @@ tailwind.config = { theme: { extend: { colors: {
       <h2 class="text-steel/50 text-xs font-mono uppercase tracking-[0.2em] mb-4">02 / Review</h2>
       <div id="cards" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4"></div>
       <div class="grid sm:grid-cols-3 gap-3">
-        <div><h3 class="text-steel/40 text-[11px] font-mono mb-1">start.gcode</h3><pre id="start" class="bg-panel border border-line rounded-lg p-3 text-[11px] font-mono text-steel/90 max-h-48 overflow-auto"></pre></div>
+        <div><h3 class="text-steel/40 text-[11px] font-mono mb-1">start.gcode</h3><pre id="startGcode" class="bg-panel border border-line rounded-lg p-3 text-[11px] font-mono text-steel/90 max-h-48 overflow-auto"></pre></div>
         <div><h3 class="text-steel/40 text-[11px] font-mono mb-1">end.gcode</h3><pre id="end" class="bg-panel border border-line rounded-lg p-3 text-[11px] font-mono text-steel/90 max-h-48 overflow-auto"></pre></div>
         <div><h3 class="text-steel/40 text-[11px] font-mono mb-1">sliced (head)</h3><pre id="head" class="bg-panel border border-line rounded-lg p-3 text-[11px] font-mono text-steel/90 max-h-48 overflow-auto"></pre></div>
       </div>
@@ -360,7 +360,7 @@ async function doSlice(){
     const m=d.merged;
     const cards=[['layers',d.estimates.layers],['est. time',fmtTime(d.estimates.time_seconds)],['nozzle',m.nozzle_temp+'°C'],['bed',m.bed_temp+'°C'],['adhesion',m.adhesion],['supports',m.support_enable?'on':'off']];
     el('cards').innerHTML=cards.map(c=>'<div class="bg-panel border border-line rounded-lg p-3"><div class="text-steel/40 text-[10px] font-mono uppercase tracking-wider">'+c[0]+'</div><div class="text-filament text-lg font-mono">'+c[1]+'</div></div>').join('');
-    el('start').textContent=d.start_gcode; el('end').textContent=d.end_gcode; el('head').textContent=d.gcode_head;
+    el('startGcode').textContent=d.start_gcode; el('end').textContent=d.end_gcode; el('head').textContent=d.gcode_head;
     el('review').classList.remove('hidden'); el('sendSection').classList.remove('hidden');
     setMsg('sliceMsg','text-ok','sliced → '+d.filename);
     el('send').disabled=false; sentReady=false; refreshStartButton(); window._lastFile=d.octoprint_name;
@@ -395,7 +395,7 @@ async function sliceWithPolyslice(){
     const est={layers:lm?Number(lm[1]):null,time_seconds:null,filament_m:fm?Number(fm[1]):null,filament_g:null};
     const cards=[['layers',est.layers||'?'],['filament',(est.filament_m?est.filament_m+'mm':'?')],['nozzle',m.nozzle_temp+'°C'],['bed',m.bed_temp+'°C'],['adhesion',m.adhesion],['supports',m.support_enable?'on':'off']];
     el('cards').innerHTML=cards.map(c=>'<div class="bg-panel border border-line rounded-lg p-3"><div class="text-steel/40 text-[10px] font-mono uppercase tracking-wider">'+c[0]+'</div><div class="text-filament text-lg font-mono">'+c[1]+'</div></div>').join('');
-    el('start').textContent=P.start_gcode; el('end').textContent=P.end_gcode;
+    el('startGcode').textContent=P.start_gcode; el('end').textContent=P.end_gcode;
     el('head').textContent=gcode.split('\\n').slice(0,25).join('\\n');
     el('review').classList.remove('hidden'); el('sendSection').classList.remove('hidden');
     const filename=stl.name.replace(/\.stl$/i,'')+'__'+m.filament+'_'+m.plate+'_'+m.quality+'_polyslice.gcode';
