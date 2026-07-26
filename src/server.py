@@ -233,7 +233,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import Polyslice from '@jgphilpott/polyslice';
 
 const el = id => document.getElementById(id);
-const BED = 235;
+const BED = 220;  // matches the OctoPrint printer profile's configured build volume
 let rot = {x:0,y:0,z:0}, flatMode = false;
 let slicerChoice = 'cura';
 

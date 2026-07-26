@@ -10,13 +10,14 @@ a 3D viewer. Handles binary STL (the common case) and ASCII STL.
   support-minimizing orientation (overhang analysis) is a later lift.
 
 After any transform the model is normalized: min Z -> 0 (on the bed) and XY
-centered on the bed (Ender-3, 235mm) so a rotated model never lands off-plate.
+centered on the bed (Ender-3, 220mm -- matches the OctoPrint printer
+profile's configured build volume) so a rotated model never lands off-plate.
 """
 from __future__ import annotations
 import math
 import struct
 
-BED = 235.0
+BED = 220.0
 MAX_HEIGHT = 250.0
 
 
