@@ -99,8 +99,8 @@ tailwind.config = { theme: { extend: { colors: {
       </div>
 
       <div class="mt-5 flex flex-wrap items-end gap-2">
-        <div class="flex-1 min-w-[200px]"><label class="block text-steel/60 text-xs mb-1">Look up filament online</label><input id="filQuery" type="text" placeholder="e.g. Polymaker PolyTerra PLA Black" class="w-full bg-panel border border-line rounded-lg px-3 py-2 text-sm text-filament"></div>
-        <button id="filSearch" class="px-3 py-2 rounded-lg bg-panel2 border border-line text-filament text-sm hover:border-molten">Search</button>
+        <div class="flex-1 min-w-[200px]"><label class="block text-steel/60 text-xs mb-1">Look up filament <span class="text-molten/70">· AI web search</span></label><input id="filQuery" type="text" placeholder="e.g. Polymaker PolyTerra PLA Black" class="w-full bg-panel border border-line rounded-lg px-3 py-2 text-sm text-filament"></div>
+        <button id="filSearch" class="px-3 py-2 rounded-lg bg-panel2 border border-line text-filament text-sm hover:border-molten">Ask Claude</button>
       </div>
       <div id="filResult" class="mt-3 hidden">
         <div class="text-steel/40 text-[11px] font-mono mb-1">review / edit specs (JSON), then save</div>
@@ -194,7 +194,21 @@ tailwind.config = { theme: { extend: { colors: {
         <img id="cam" class="w-full h-full object-cover" alt="webcam">
         <div id="camOff" class="absolute inset-0 flex items-center justify-center text-steel/40 text-xs font-mono">camera offline</div>
       </div>
-      <button id="camRefresh" class="mt-2 text-[11px] font-mono text-steel/50 hover:text-filament">refresh now</button>
+      <div class="flex items-center justify-between mt-2">
+        <button id="camRefresh" class="text-[11px] font-mono text-steel/50 hover:text-filament">refresh now</button>
+        <button id="camReview" class="text-[11px] font-mono text-steel/50 hover:text-molten">AI review</button>
+      </div>
+      <div id="camReviewMsg" class="text-sm mt-2"></div>
+    </section>
+
+    <section class="bg-panel border border-line rounded-xl p-5">
+      <h2 class="text-steel/50 text-xs font-mono uppercase tracking-[0.2em] mb-3">Assistant <span class="text-molten/70 normal-case tracking-normal">· Claude</span></h2>
+      <div id="chatLog" class="h-48 overflow-y-auto space-y-2 mb-3 text-sm"></div>
+      <div class="flex gap-2">
+        <input id="chatInput" type="text" placeholder="ask about filament, adhesion, troubleshooting…" class="flex-1 bg-panel2 border border-line rounded-lg px-3 py-2 text-sm text-filament">
+        <button id="chatSend" class="px-3 py-2 rounded-lg bg-panel2 border border-line text-filament text-sm hover:border-molten">Send</button>
+      </div>
+      <div id="chatMsg" class="text-sm mt-2"></div>
     </section>
   </aside>
 </main>
@@ -213,6 +227,19 @@ let slicerChoice = 'cura';
 
 function setMsg(id, cls, text){ el(id).innerHTML = '<span class="'+cls+'">'+text+'</span>'; }
 function fmtTime(s){ if(s==null) return '?'; const m=Math.round(s/60); return Math.floor(m/60)+'h '+(m%60)+'m'; }
+
+/* ---- AI calls: shared error handling so a low-balance/no-key failure always reads clearly ---- */
+async function fetchJsonOrThrow(url, opts){
+  const r = await fetch(url, opts);
+  const d = await r.json();
+  if(!r.ok){ const err = new Error(d.error||('HTTP '+r.status)); err.lowCredits=!!d.low_credits; err.noKey=!!d.no_key; throw err; }
+  return d;
+}
+function aiErrorMsg(err){
+  if(err.lowCredits) return '⚠ Anthropic account is out of credits — add funds at console.anthropic.com, then try again.';
+  if(err.noKey) return '⚠ AI features are not configured (no API key on the Pi).';
+  return err.message;
+}
 
 /* ---- 3D viewer (所见即所印: same rotations as the slicer) ---- */
 let scene, camera, renderer, controls, mesh, baseGeo=null;
@@ -437,18 +464,43 @@ async function pollStatus(){
 function camRefresh(){ el('cam').src='/api/camera/snapshot?ts='+Date.now(); }
 el('cam').addEventListener('error',()=>{ el('camOff').classList.remove('hidden'); el('cam').style.opacity=0; });
 el('cam').addEventListener('load',()=>{ el('camOff').classList.add('hidden'); el('cam').style.opacity=1; });
+async function camReview(){
+  el('camReview').disabled=true; setMsg('camReviewMsg','text-filament','looking…');
+  try{
+    const d=await fetchJsonOrThrow('/api/camera/review',{method:'POST'});
+    setMsg('camReviewMsg','text-steel/90',d.review);
+  }catch(e){ setMsg('camReviewMsg','text-molten',aiErrorMsg(e)); } finally{ el('camReview').disabled=false; }
+}
+
+/* ---- chat ---- */
+let chatHistory=[];
+function renderChat(){
+  el('chatLog').innerHTML=chatHistory.map(m=>
+    '<div><span class="text-steel/40 text-[10px] font-mono uppercase mr-1">'+(m.role==='user'?'you':'claude')+'</span><span class="'+(m.role==='user'?'text-steel/80':'text-filament')+'">'+m.content.replace(/</g,'&lt;')+'</span></div>'
+  ).join('');
+  el('chatLog').scrollTop=el('chatLog').scrollHeight;
+}
+async function chatSend(){
+  const q=el('chatInput').value.trim(); if(!q) return;
+  chatHistory.push({role:'user',content:q}); renderChat(); el('chatInput').value='';
+  el('chatSend').disabled=true; setMsg('chatMsg','text-filament','thinking…');
+  try{
+    const d=await fetchJsonOrThrow('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:chatHistory})});
+    chatHistory.push({role:'assistant',content:d.reply}); renderChat();
+    setMsg('chatMsg','','');
+  }catch(e){ setMsg('chatMsg','text-molten',aiErrorMsg(e)); } finally{ el('chatSend').disabled=false; }
+}
 
 async function filSearch(){
   const q=el('filQuery').value.trim(); if(!q) return;
-  el('filSearch').disabled=true; setMsg('filMsg','text-filament','searching the web…');
+  el('filSearch').disabled=true; setMsg('filMsg','text-filament','asking Claude…');
   try{
-    const r=await fetch('/api/filament/lookup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})});
-    const d=await r.json(); if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+    const d=await fetchJsonOrThrow('/api/filament/lookup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})});
     el('filResult').classList.remove('hidden');
     el('filJson').value=JSON.stringify(d.profile,null,2);
     el('filSlug').value=q.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
     setMsg('filMsg','text-ok','found specs — review and save');
-  }catch(e){ setMsg('filMsg','text-molten',e.message); } finally{ el('filSearch').disabled=false; }
+  }catch(e){ setMsg('filMsg','text-molten',aiErrorMsg(e)); } finally{ el('filSearch').disabled=false; }
 }
 async function filSave(){
   let profile; try{ profile=JSON.parse(el('filJson').value); }catch(e){ setMsg('filMsg','text-molten','invalid JSON'); return; }
@@ -473,8 +525,11 @@ el('slice').addEventListener('click',doSlice);
 el('send').addEventListener('click',doSend);
 el('start').addEventListener('click',doStart);
 el('camRefresh').addEventListener('click',camRefresh);
+el('camReview').addEventListener('click',camReview);
 el('filSearch').addEventListener('click',filSearch);
 el('filSave').addEventListener('click',filSave);
+el('chatSend').addEventListener('click',chatSend);
+el('chatInput').addEventListener('keydown', e=>{ if(e.key==='Enter') chatSend(); });
 
 initViewer();
 updateRotLabel();
@@ -548,15 +603,36 @@ def api_slice():
     )
 
 
+def _camera_snapshot_bytes():
+    r = octo().s.get(f"{octo().host}/webcam/?action=snapshot", timeout=8)
+    if r.status_code != 200 or not r.content:
+        raise RuntimeError("camera snapshot unavailable")
+    return r.content
+
+
 @app.get("/api/camera/snapshot")
 def api_camera():
     try:
-        r = octo().s.get(f"{octo().host}/webcam/?action=snapshot", timeout=8)
-        if r.status_code != 200 or not r.content:
-            return Response(b"", status=502, mimetype="image/jpeg")
-        return Response(r.content, mimetype="image/jpeg")
+        return Response(_camera_snapshot_bytes(), mimetype="image/jpeg")
     except Exception:
         return Response(b"", status=502, mimetype="image/jpeg")
+
+
+@app.post("/api/camera/review")
+def api_camera_review():
+    try:
+        img = _camera_snapshot_bytes()
+    except Exception as e:
+        return jsonify(error=str(e)), 502
+    try:
+        review = aiclient.review_camera(img)
+    except aiclient.NoKeyError as e:
+        return jsonify(error=str(e), no_key=True), 503
+    except aiclient.InsufficientCreditsError as e:
+        return jsonify(error=str(e), low_credits=True), 503
+    except Exception as e:
+        return jsonify(error=str(e)), 502
+    return jsonify(review=review)
 
 
 @app.post("/api/send")
@@ -603,9 +679,27 @@ def api_filament_lookup():
         profile = aiclient.lookup_filament(q)
     except aiclient.NoKeyError as e:
         return jsonify(error=str(e), no_key=True), 503
+    except aiclient.InsufficientCreditsError as e:
+        return jsonify(error=str(e), low_credits=True), 503
     except Exception as e:
         return jsonify(error=str(e)), 502
     return jsonify(profile=profile)
+
+
+@app.post("/api/chat")
+def api_chat():
+    messages = (request.get_json(silent=True) or {}).get("messages")
+    if not messages:
+        return jsonify(error="messages required"), 400
+    try:
+        reply = aiclient.chat(messages)
+    except aiclient.NoKeyError as e:
+        return jsonify(error=str(e), no_key=True), 503
+    except aiclient.InsufficientCreditsError as e:
+        return jsonify(error=str(e), low_credits=True), 503
+    except Exception as e:
+        return jsonify(error=str(e)), 502
+    return jsonify(reply=reply)
 
 
 @app.post("/api/filament/save")

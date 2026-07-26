@@ -105,7 +105,7 @@ def start_gcode(m: dict) -> str:
 
 def end_gcode(m: dict) -> str:
     """Generated end G-code. Parks, unloads filament while hot, then cools bed
-    to a safe removal temp when the plate needs it (glass); PEI flex just turns off."""
+    to a safe removal temp when the plate needs it (glass); PEX flex just turns off."""
     lines = [
         f"; end.gcode -- {m['filament']} / {m['plate']}",
         "M400               ; finish pending moves",

@@ -28,10 +28,10 @@ def test_glass_pla_standard():
     assert "M140 S0" not in e, "glass should cool-and-hold, not bed-off"
 
 
-def test_pei_draft_no_cooldown():
-    m = compile_profile("polymaker-polyterra-pla-black", "whambam-pei-textured", "draft")
-    # PEI: no offset, no adhesion, no cooldown
-    assert m["bed_temp"] == 60, f"PEI bed_temp {m['bed_temp']}"
+def test_pex_draft_no_cooldown():
+    m = compile_profile("polymaker-polyterra-pla-black", "whambam-pex-textured", "draft")
+    # PEX: no offset, no adhesion, no cooldown
+    assert m["bed_temp"] == 60, f"PEX bed_temp {m['bed_temp']}"
     assert m["adhesion"] == "none"
     assert m["removal_temp"] == 0
     assert m["layer_height"] == 0.2  # draft
@@ -57,7 +57,7 @@ def test_compile_all_shape():
 def test_list_profiles():
     assert "polymaker-polyterra-pla-black" in list_profiles("filaments")
     assert "glass-stock" in list_profiles("plates")
-    assert "whambam-pei-textured" in list_profiles("plates")
+    assert "whambam-pex-textured" in list_profiles("plates")
     assert {"draft", "standard", "fine"} <= set(list_profiles("qualities"))
 
 
