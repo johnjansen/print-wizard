@@ -154,18 +154,17 @@ tailwind.config = { theme: { extend: { colors: {
     </section>
 
     <section id="sendSection" class="hidden">
-      <h2 class="text-steel/50 text-xs font-mono uppercase tracking-[0.2em] mb-4">03 / Send &amp; print</h2>
+      <h2 class="text-steel/50 text-xs font-mono uppercase tracking-[0.2em] mb-4">03 / Print</h2>
       <div id="removalGate" class="hidden mb-3 p-3 rounded-lg border border-filament/40 bg-filament/10 flex items-center justify-between gap-3 flex-wrap">
         <span class="text-filament text-sm">Previous print finished — confirm the bed is clear before starting the next one.</span>
         <button id="printRemoved" class="px-3 py-1.5 rounded-md bg-ok/20 border border-ok/40 text-ok text-sm font-600 hover:bg-ok/30 whitespace-nowrap">Print removed</button>
       </div>
+      <div id="sendMsg" class="text-sm mb-2"></div>
       <div class="flex flex-wrap items-center gap-3">
-        <button id="send" class="px-4 py-2 rounded-lg bg-panel2 border border-line text-filament text-sm font-600 hover:border-filament">Send G-code to OctoPrint</button>
         <button id="start" class="px-4 py-2 rounded-lg bg-ok/15 border border-ok/40 text-ok text-sm font-600 hover:bg-ok/25">Print it? Yes</button>
       </div>
       <p class="text-steel/50 text-xs mt-3 max-w-md">Insert the filament tip into the feeder, then confirm. Start is blocked while the printer is busy.</p>
       <div id="startNote" class="text-steel/40 text-xs font-mono mt-1"></div>
-      <div id="sendMsg" class="text-sm mt-2"></div>
       <div id="startMsg" class="text-sm mt-2"></div>
     </section>
   </div>
@@ -332,11 +331,11 @@ function doReset(){ flatMode=false; rot={x:0,y:0,z:0}; updateRotLabel(); applyOr
 function doLayFlat(){ const b=layFlatCompute(); if(!b)return; flatMode=true; rot={x:b.x,y:b.y,z:0}; updateRotLabel(); applyOrientation(); }
 
 /* ---- slice / send / start ---- */
-let sentReady=false, liveBusy=false, awaitingRemoval=false, wasBusy=null;
+let sliced=false, liveBusy=false, awaitingRemoval=false, wasBusy=null;
 function refreshStartButton(){
-  el('start').disabled = !sentReady || liveBusy || awaitingRemoval;
+  el('start').disabled = !sliced || liveBusy || awaitingRemoval;
   let note='';
-  if(!sentReady) note='blocked: send the G-code to OctoPrint first';
+  if(!sliced) note='blocked: slice a model first';
   else if(liveBusy) note='blocked: printer is currently busy';
   else if(awaitingRemoval) note='blocked: confirm the bed is clear (see above)';
   el('startNote').textContent=note;
@@ -364,7 +363,7 @@ async function doSlice(){
     el('startGcode').textContent=d.start_gcode; el('end').textContent=d.end_gcode; el('head').textContent=d.gcode_head;
     el('review').classList.remove('hidden'); el('sendSection').classList.remove('hidden');
     setMsg('sliceMsg','text-ok','sliced → '+d.filename);
-    el('send').disabled=false; sentReady=false; refreshStartButton(); window._lastFile=d.octoprint_name;
+    window._lastFile=d.octoprint_name; sliced=true; refreshStartButton();
   }catch(e){ setMsg('sliceMsg','text-molten',e.message); } finally{ el('slice').disabled=false; }
 }
 function setSlicer(choice){
@@ -402,23 +401,23 @@ async function sliceWithPolyslice(){
     const filename=stl.name.replace(/\.stl$/i,'')+'__'+m.filament+'_'+m.plate+'_'+m.quality+'_polyslice.gcode';
     window._browserGcode=gcode; window._browserFilename=filename; window._lastFile=filename;
     setMsg('sliceMsg','text-ok','sliced (Polyslice) → '+filename);
-    el('send').disabled=false; sentReady=false; refreshStartButton();
+    sliced=true; refreshStartButton();
   }catch(e){ setMsg('sliceMsg','text-molten',e.message); } finally{ el('slice').disabled=false; }
 }
 async function doSend(){
-  el('send').disabled=true; setMsg('sendMsg','text-filament','uploading…');
+  setMsg('sendMsg','text-filament','uploading…');
   const url = window._browserGcode ? '/api/upload-gcode' : '/api/send';
   const body = window._browserGcode ? JSON.stringify({filename:window._browserFilename,gcode:window._browserGcode}) : null;
-  try{
-    const r=await fetch(url,{method:'POST',headers:body?{'Content-Type':'application/json'}:{},body:body});
-    const d=await r.json();
-    if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
-    setMsg('sendMsg','text-ok','sent as '+d.octoprint_file); sentReady=true; refreshStartButton(); window._lastFile=d.octoprint_file;
-  }catch(e){ setMsg('sendMsg','text-molten',e.message); } finally{ el('send').disabled=false; }
+  const r=await fetch(url,{method:'POST',headers:body?{'Content-Type':'application/json'}:{},body:body});
+  const d=await r.json();
+  if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+  setMsg('sendMsg','text-ok','sent as '+d.octoprint_file); window._lastFile=d.octoprint_file;
 }
 async function doStart(){
-  el('start').disabled=true; setMsg('startMsg','text-filament','checking printer…');
+  el('start').disabled=true; setMsg('sendMsg','',''); setMsg('startMsg','text-filament','uploading…');
   try{
+    await doSend();
+    setMsg('startMsg','text-filament','checking printer…');
     const r=await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target:window._lastFile})});
     const d=await r.json(); if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
     setMsg('startMsg','text-ok','print started');
@@ -523,7 +522,6 @@ el('rotReset').addEventListener('click',doReset);
 el('slCura').addEventListener('click',()=>setSlicer('cura'));
 el('slPoly').addEventListener('click',()=>setSlicer('poly'));
 el('slice').addEventListener('click',doSlice);
-el('send').addEventListener('click',doSend);
 el('start').addEventListener('click',doStart);
 el('camRefresh').addEventListener('click',camRefresh);
 el('camReview').addEventListener('click',camReview);

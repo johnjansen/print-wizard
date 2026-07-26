@@ -63,6 +63,8 @@ def _settings_from_merged(m: dict, start_gcode: str, end_gcode: str) -> dict:
         "speed_print": str(m["speed"]),
         "speed_print_layer_0": str(m["first_layer_speed"]),
         "wall_line_count": str(m["walls"]),
+        "top_layers": str(m["top_layers"]),
+        "bottom_layers": str(m["bottom_layers"]),
         "material_print_temperature": str(m["nozzle_temp"]),
         "material_bed_temperature": str(m["bed_temp"]),
         "material_bed_temperature_layer_0": str(m["bed_temp"]),

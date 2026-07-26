@@ -77,6 +77,8 @@ def compile_profile(filament: str, plate: str, quality: str) -> dict:
         "speed": q["speed"],
         "infill": q["infill"],
         "walls": q["walls"],
+        "top_layers": q["top_layers"],
+        "bottom_layers": q["bottom_layers"],
     }
 
 
