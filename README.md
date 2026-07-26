@@ -3,7 +3,7 @@
 A local SimplyPrint replacement for the Creality Ender-3-2024 on OctoPrint.
 Pick filament + plate + quality (+ adhesion + supports), slice, review, confirm,
 and it hands off to OctoPrint. Knows about a stock glass plate and a WhamBam
-PEI flex plate and adjusts bed temp / adhesion / removal cooldown accordingly.
+PEX flex plate and adjusts bed temp / adhesion / removal cooldown accordingly.
 
 Runs entirely on the Pi (OctoPrint's own host), self-provisioned via Ansible.
 Open from any browser on the LAN: `http://192.168.1.200:8765`.
@@ -65,7 +65,7 @@ On the Pi the wizard's creds point at `http://127.0.0.1:80` (same machine).
 ## Status
 
 - Filaments: 1 (Polymaker PolyTerra PLA Black). Add more in `profiles/filaments/`.
-- Plates: glass-stock (+10C bed, brim, cool-to-45 removal), whambam-pei-textured
+- Plates: glass-stock (+10C bed, brim, cool-to-45 removal), whambam-pex-textured
   (no offset, no adhesion, remove-hot).
 - Qualities: draft / standard / fine.
 - UI overrides: adhesion (auto/none/skirt/brim/raft), supports (on/off).

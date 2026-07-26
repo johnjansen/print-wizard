@@ -1,6 +1,6 @@
 {
-  "name": "WhamBam PEI textured (flex steel)",
-  "surface": "PEI-textured",
+  "name": "WhamBam PEX textured (flex steel)",
+  "surface": "PEX-textured",
   "bed_temp_offset": 0,
   "z_offset": 0.0,
   "first_layer_height": 0.2,
