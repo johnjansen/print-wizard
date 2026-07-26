@@ -16,7 +16,7 @@ import re
 
 from flask import Flask, request, jsonify, Response
 
-from compiler import compile_all, list_profiles
+from compiler import compile_all, list_profiles, get_filament
 from slicer import slice_model
 from octoprint_client import OctoPrintClient
 import stl_transform
@@ -187,6 +187,19 @@ tailwind.config = { theme: { extend: { colors: {
 
     <section class="bg-panel border border-line rounded-xl p-5">
       <div class="flex items-center justify-between mb-3">
+        <h2 class="text-steel/50 text-xs font-mono uppercase tracking-[0.2em]">Filament change</h2>
+        <button id="filCooldown" class="text-[11px] font-mono text-steel/50 hover:text-molten">cooldown</button>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button id="filEject" class="px-3 py-2 rounded-lg bg-panel2 border border-line text-filament text-sm hover:border-molten">Eject</button>
+        <button id="filLoad" class="px-3 py-2 rounded-lg bg-panel2 border border-line text-filament text-sm hover:border-molten">Load</button>
+      </div>
+      <p class="text-steel/50 text-xs mt-3">Uses the filament selected in Step 01 — set it to what's currently loaded before Eject, and to what you're inserting before Load. Insert the tip before clicking Load. Both heat first, then run auto-unload (M702) / auto-load (M701). Blocked while printing.</p>
+      <div id="filChangeMsg" class="text-sm mt-2"></div>
+    </section>
+
+    <section class="bg-panel border border-line rounded-xl p-5">
+      <div class="flex items-center justify-between mb-3">
         <h2 class="text-steel/50 text-xs font-mono uppercase tracking-[0.2em]">Camera</h2>
         <label class="text-steel/60 text-[11px] font-mono flex items-center gap-1"><input type="checkbox" id="camAuto" checked class="accent-molten"> auto</label>
       </div>
@@ -343,6 +356,7 @@ function refreshStartButton(){
 }
 function updateRemovalBanner(){ el('removalGate').classList.toggle('hidden', !awaitingRemoval); }
 el('printRemoved').addEventListener('click',()=>{ awaitingRemoval=false; updateRemovalBanner(); refreshStartButton(); });
+function refreshFilButtons(){ el('filEject').disabled = liveBusy; el('filLoad').disabled = liveBusy; el('filCooldown').disabled = liveBusy; }
 async function doSlice(){
   if (slicerChoice==='poly') return sliceWithPolyslice();
   window._browserGcode = null;
@@ -453,7 +467,7 @@ async function pollStatus(){
     liveBusy=!!d.busy;
     if(wasBusy===true && !liveBusy) awaitingRemoval=true;
     wasBusy=liveBusy;
-    updateRemovalBanner(); refreshStartButton();
+    updateRemovalBanner(); refreshStartButton(); refreshFilButtons();
   }catch(e){
     el('hdrState').className='px-2 py-1 rounded-full border font-mono text-xs text-molten border-molten/40';
     el('hdrState').textContent='connection lost';
@@ -513,6 +527,29 @@ async function filSave(){
     setTimeout(()=>location.reload(),800);
   }catch(e){ setMsg('filMsg','text-molten',e.message); }
 }
+/* ---- filament change ---- */
+async function filEject(){
+  const filament=el('fil').value;
+  el('filEject').disabled=true; setMsg('filChangeMsg','text-filament','heating & ejecting…');
+  try{
+    const d=await fetchJsonOrThrow('/api/filament/eject',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filament})});
+    setMsg('filChangeMsg','text-ok','heating to '+d.temp+'° then auto-unload (M702) — watch the hotend temp above');
+  }catch(e){ setMsg('filChangeMsg','text-molten',e.message); } finally{ refreshFilButtons(); }
+}
+async function filLoad(){
+  const filament=el('fil').value;
+  el('filLoad').disabled=true; setMsg('filChangeMsg','text-filament','heating & loading…');
+  try{
+    const d=await fetchJsonOrThrow('/api/filament/load',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filament})});
+    setMsg('filChangeMsg','text-ok','heating to '+d.temp+'° then auto-load (M701) — watch the hotend temp above');
+  }catch(e){ setMsg('filChangeMsg','text-molten',e.message); } finally{ refreshFilButtons(); }
+}
+async function filCooldown(){
+  setMsg('filChangeMsg','text-filament','cooling down…');
+  try{ await fetchJsonOrThrow('/api/filament/cooldown',{method:'POST'}); setMsg('filChangeMsg','text-ok','hotend off'); }
+  catch(e){ setMsg('filChangeMsg','text-molten',e.message); }
+}
+
 /* ---- wire up ---- */
 el('stl').addEventListener('change', e=>{ if(e.target.files[0]) loadSTL(e.target.files[0]); });
 el('rotX').addEventListener('click',()=>doRot('x'));
@@ -529,6 +566,9 @@ el('camRefresh').addEventListener('click',camRefresh);
 el('camReview').addEventListener('click',camReview);
 el('filSearch').addEventListener('click',filSearch);
 el('filSave').addEventListener('click',filSave);
+el('filEject').addEventListener('click',filEject);
+el('filLoad').addEventListener('click',filLoad);
+el('filCooldown').addEventListener('click',filCooldown);
 el('chatSend').addEventListener('click',chatSend);
 el('chatInput').addEventListener('keydown', e=>{ if(e.key==='Enter') chatSend(); });
 
@@ -669,6 +709,56 @@ def api_status():
         return jsonify(octo().status())
     except Exception as e:
         return jsonify(error=str(e)), 502
+
+
+@app.post("/api/filament/eject")
+def api_filament_eject():
+    filament = (request.get_json(silent=True) or {}).get("filament")
+    if not filament:
+        return jsonify(error="filament required"), 400
+    try:
+        octo().require_idle("eject filament")
+        f = get_filament(filament)
+        temp = f["unload_temp"]
+        octo().send_gcode([f"M104 S{temp}", f"M109 S{temp}", "M702"])
+    except FileNotFoundError as e:
+        return jsonify(error=str(e)), 404
+    except RuntimeError as e:
+        return jsonify(error=str(e), state=octo().status().get("state")), 409
+    except Exception as e:
+        return jsonify(error=str(e)), 502
+    return jsonify(ok=True, temp=temp)
+
+
+@app.post("/api/filament/load")
+def api_filament_load():
+    filament = (request.get_json(silent=True) or {}).get("filament")
+    if not filament:
+        return jsonify(error="filament required"), 400
+    try:
+        octo().require_idle("load filament")
+        f = get_filament(filament)
+        temp = f["load_temp"]
+        octo().send_gcode([f"M104 S{temp}", f"M109 S{temp}", "M701"])
+    except FileNotFoundError as e:
+        return jsonify(error=str(e)), 404
+    except RuntimeError as e:
+        return jsonify(error=str(e), state=octo().status().get("state")), 409
+    except Exception as e:
+        return jsonify(error=str(e)), 502
+    return jsonify(ok=True, temp=temp)
+
+
+@app.post("/api/filament/cooldown")
+def api_filament_cooldown():
+    try:
+        octo().require_idle("cool down")
+        octo().send_gcode(["M104 S0"])
+    except RuntimeError as e:
+        return jsonify(error=str(e), state=octo().status().get("state")), 409
+    except Exception as e:
+        return jsonify(error=str(e)), 502
+    return jsonify(ok=True)
 
 
 @app.post("/api/filament/lookup")

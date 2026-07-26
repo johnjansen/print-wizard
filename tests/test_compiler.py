@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from compiler import compile_profile, start_gcode, end_gcode, compile_all, list_profiles
+from compiler import compile_profile, start_gcode, end_gcode, compile_all, list_profiles, get_filament
 
 
 def test_glass_pla_standard():
@@ -60,6 +60,12 @@ def test_list_profiles():
     assert "glass-stock" in list_profiles("plates")
     assert "whambam-pex-textured" in list_profiles("plates")
     assert {"draft", "standard", "fine"} <= set(list_profiles("qualities"))
+
+
+def test_get_filament_standalone():
+    f = get_filament("polymaker-polyterra-pla-black")
+    assert f["load_temp"] == 210
+    assert f["unload_temp"] == 210
 
 
 def test_missing_profile_raises():
