@@ -117,6 +117,11 @@ def start_gcode(m: dict) -> str:
         "G1 X20 Y20 Z0.2 F1500  ; move to prime start",
         "G1 E20 F200        ; prime / purge",
         "G92 E0             ; reset extruder",
+        # Without this, the sliced file's first travel move drags the nozzle
+        # (still at Z0.2, right after a 20mm purge) in a straight line across
+        # open bed to wherever the model's first layer actually starts --
+        # smearing the purge blob into a visible scratch near the print.
+        "G1 Z5 F3000        ; lift clear of the purge blob before slicing takes over",
         f"M117 printing {m['filament']}",
     ]
     return "\n".join(lines)
