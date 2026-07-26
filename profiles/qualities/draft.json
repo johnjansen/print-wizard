@@ -3,5 +3,7 @@
   "layer_height": 0.2,
   "speed": 60,
   "infill": 15,
-  "walls": 2
+  "walls": 2,
+  "top_layers": 4,
+  "bottom_layers": 4
 }
