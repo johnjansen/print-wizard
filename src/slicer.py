@@ -118,10 +118,18 @@ def slice_model(
     args += ["-o", str(out_path), "-l", str(model_path)]
 
     proc = subprocess.run(args, env=env, capture_output=True, text=True)
-    errors = [ln for ln in proc.stdout.splitlines() if "[error]" in ln]
+    combined = proc.stdout + "\n" + proc.stderr
+    # CuraEngine 5.13 writes [error] lines to stdout mixed with the info dump;
+    # 4.13 (the Pi's headless build) writes everything -- warnings and the
+    # fatal error alike -- to stderr instead, and tags it "[ERROR]" uppercase.
+    # Scanning stdout only, lowercase-only, never matched on the Pi -- it fell
+    # through to dumping raw output, which always missed the actual cause too:
+    # CuraEngine echoes its full resolved settings table right before a fatal
+    # error, so the real reason is the *last* thing printed, not the first.
+    errors = [ln for ln in combined.splitlines() if "[error]" in ln.lower()]
     out = pathlib.Path(out_path)
     if proc.returncode != 0 or not out.exists() or out.stat().st_size == 0:
-        detail = "\n".join(errors[:6]) or (proc.stderr or proc.stdout)[:800]
+        detail = "\n".join(errors[-6:]) or combined.strip()[-800:]
         raise RuntimeError(f"CuraEngine failed (exit {proc.returncode}):\n{detail}")
 
     est = parse_estimates(out_path)
