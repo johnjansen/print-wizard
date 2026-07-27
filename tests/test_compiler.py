@@ -20,10 +20,11 @@ def test_glass_pla_standard():
     assert m["removal_temp"] == 45
     assert m["layer_height"] == 0.16  # standard quality
     s = start_gcode(m)
-    assert "G1 E150" in s, "start must feed filament to load"
+    assert "G1 E20" in s, "start must prime the nozzle"
+    assert "G1 E150" not in s, "start must not do a full load -- that's the Load endpoint's job"
     assert "S70" in s and "S210" in s, f"start temps wrong:\n{s}"
     e = end_gcode(m)
-    assert "G1 E-150" in e, "end must retract filament to unload"
+    assert "G1 E-150" not in e, "end must not unload filament -- that's the Eject endpoint's job"
     assert "R45" in e, f"glass must cool to removal temp:\n{e}"
     assert "M140 S0" not in e, "glass should cool-and-hold, not bed-off"
 
@@ -37,7 +38,7 @@ def test_pex_draft_no_cooldown():
     assert m["layer_height"] == 0.2  # draft
     assert m["first_layer_height"] == 0.1, "PEX PLA wants a squished (half-height) first layer"
     e = end_gcode(m)
-    assert "G1 E-150" in e
+    assert "G1 E-150" not in e, "end must not unload filament -- that's the Eject endpoint's job"
     assert "M140 S0" in e, "PEX should bed-off (remove hot)"
     assert "R0" not in e, "PEX should not emit a cooldown wait"
 
