@@ -7,9 +7,10 @@ Design notes:
 - Slicer-agnostic. The OrcaSlicer adapter that turns `merged` into a slicer
   profile lives in Phase 2. This module owns the brain, not any one slicer's
   format.
-- Always-empty-at-start: end.gcode unloads (M702) on every finish, so
-  start.gcode can always load (M701) without state-tracking or double-feed.
-  The operator inserts the new spool's tip into the feeder before confirming.
+- Filament stays loaded across prints. Loading/unloading is a separate,
+  explicit action (the Eject/Load endpoints), never part of a print's own
+  start/end sequence -- start.gcode only primes what's already in the
+  hotend, end.gcode only parks and cools.
 - No schema library. Profiles are small and author-owned; missing keys raise
   loudly with the profile name so typos surface immediately.
 """
@@ -97,18 +98,16 @@ def compile_profile(filament: str, plate: str, quality: str) -> dict:
 
 
 def start_gcode(m: dict) -> str:
-    """Generated start G-code. Heats bed, loads filament, heats to print, primes."""
-    bed, load, nozzle = m["bed_temp"], m["load_temp"], m["nozzle_temp"]
+    """Generated start G-code. Heats bed and hotend, then primes.
+
+    Assumes filament is already loaded -- a normal print never feeds or
+    retracts a whole spool's worth of filament. Use the Load endpoint first
+    if the hotend is actually empty."""
+    bed, nozzle = m["bed_temp"], m["nozzle_temp"]
     lines = [
         f"; start.gcode -- {m['filament']} / {m['plate']} / {m['quality']}",
         f"M140 S{bed}        ; heat bed -> {bed}C",
         f"M190 S{bed}        ; wait for bed",
-        f"M104 S{load}       ; heat hotend -> {load}C (load temp)",
-        f"M109 S{load}       ; wait for hotend",
-        "M83                ; extruder relative mode (G91/G90 don't reliably cover E)",
-        "G1 E150 F1200      ; feed filament to hotend (tip inserted at confirm)",
-        "G1 E10 F300        ; slow final feed + prime",
-        "M82                ; extruder absolute mode",
         f"M104 S{nozzle}     ; heat hotend -> {nozzle}C (print temp)",
         f"M109 S{nozzle}     ; wait for print temp",
         "G28                ; home all axes",
@@ -128,8 +127,10 @@ def start_gcode(m: dict) -> str:
 
 
 def end_gcode(m: dict) -> str:
-    """Generated end G-code. Parks, unloads filament while hot, then cools bed
-    to a safe removal temp when the plate needs it (glass); PEX flex just turns off."""
+    """Generated end G-code. Parks and cools; does NOT unload filament -- that's
+    a separate, explicit action (the Eject endpoint), not part of every
+    print's finish. Cools bed to a safe removal temp when the plate needs it
+    (glass); PEX flex just turns off."""
     lines = [
         f"; end.gcode -- {m['filament']} / {m['plate']}",
         "M400               ; finish pending moves",
@@ -139,7 +140,6 @@ def end_gcode(m: dict) -> str:
         "G28 X Y            ; home XY (nozzle stays lifted)",
         "M83                ; extruder relative mode (G91/G90 don't reliably cover E)",
         "G1 E-2 F300        ; break tack, small pull away from nozzle",
-        "G1 E-150 F1200     ; retract filament clear of extruder drive gears",
         "M82                ; extruder absolute mode",
         "M104 S0            ; hotend off",
     ]
